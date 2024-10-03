@@ -78,7 +78,7 @@ class QLearningAgent:
         if not done:
             target += self.gamma * np.max(self.q_table[next_obs])
         
-        self.q_table[obs, action] += alpha * (target - self.q_table[obs, action])   
+        self.q_table[obs, action] += 0.05 * (target - self.q_table[obs, action])   
     def train(self):
         obs, _ = self.env.reset(seed=self.args.seed)
         for self.global_step in range(self.args.total_timesteps):
@@ -103,8 +103,7 @@ class Stoch_QLearningAgent:
         self.gamma=0.95
         self.alpha=0.05
         self.env = gym.make(args.env_id)
-        self.C=int(2*np.log(self.env.action_space.n))
-        self.R= self.C - self.args.memory_size
+        self.C=2#int(2*np.log(self.env.action_space.n))
         
         # set-up
         if args.env_id=="FrozenLake-v1":
@@ -139,7 +138,7 @@ class Stoch_QLearningAgent:
         if not done:
             target += self.gamma * np.max(self.q_table[next_obs,Action_subset])
         
-        self.q_table[obs, action] += alpha * (target - self.q_table[obs, action])
+        self.q_table[obs, action] += 0.05 * (target - self.q_table[obs, action])
             
             
     def train(self):
@@ -163,7 +162,6 @@ class Stoch_QLearningAgent:
             self.accumulative_rewards.append(self.sum_rewards)
         return self.rewards,self.accumulative_rewards,self.episodes_lengths
 
-    
 # Double Q-Learning Agent#
 class DoubleQLearningAgent:
     def __init__(self, args:Args):
@@ -224,8 +222,7 @@ class DoubleQLearningAgent:
             self.sum_rewards+=reward
             self.accumulative_rewards.append(self.sum_rewards)
         return self.rewards,self.accumulative_rewards,self.episodes_lengths
-
-        
+      
 # Stochastic Double Q-Learning Agent#
 class Stoch_DoubleQLearningAgent:
     def __init__(self, args:Args):
@@ -352,7 +349,6 @@ class SARSAAgent:
             self.accumulative_rewards.append(self.sum_rewards)
         return self.rewards,self.accumulative_rewards,self.episodes_lengths
 
-
 #Stochastic Sarsa Agent         
 class Stoch_SARSAAgent:
     def __init__(self, args:Args):
@@ -420,8 +416,7 @@ class Stoch_SARSAAgent:
             self.sum_rewards+=reward
             self.accumulative_rewards.append(self.sum_rewards)
         return self.rewards,self.accumulative_rewards,self.episodes_lengths
-
-    
+ 
 # DQN Agent
 class DQNAgent:
     def __init__(self, args: Args):
@@ -592,7 +587,6 @@ class Stoch_DQNAgent:
         self.env.close()
         self.writer.close()
 
-
 # DDQN Agent
 class DDQNAgent:
     def __init__(self, args: Args):
@@ -679,8 +673,6 @@ class DDQNAgent:
     def close(self):
         self.env.close()
         self.writer.close()
-
-
 
 # Stoch DDQN Agent
 class Stoch_DDQNAgent:

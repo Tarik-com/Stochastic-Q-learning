@@ -19,8 +19,8 @@ def Subset_function(action_size,Memory_subset,C):
     """return the subset of action that contains the memory subset and a random selection of action"""
         
     tmp= np.setdiff1d(np.arange(action_size),Memory_subset)
-    Random_subset=np.random.choice(tmp,(C-len(set(Memory_subset))),replace=False)
-    Action_subset = np.concatenate((np.array(list(set(Memory_subset))), Random_subset))
+    Random_subset=np.random.choice(tmp,(C-len(Memory_subset)),replace=False)
+    Action_subset = np.concatenate((np.array(Memory_subset), Random_subset))
     return Action_subset.astype('int')
     
 def update_D(obs,D):
