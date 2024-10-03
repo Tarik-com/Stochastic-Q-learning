@@ -27,10 +27,10 @@ class Args_:
     """the user or org name of the model repository from the Hugging Face Hub"""
 
     # Algorithm specific arguments
-    env_id: str ="CliffWalking-v0"# "FrozenLake-v1"# "InvertedPendulum-v4" # #"HalfCheetah-v4" # #"FrozenLake-v1" #
+    env_id: str ="FrozenLake-v1"#"CliffWalking-v0"# # "InvertedPendulum-v4" # #"HalfCheetah-v4" # #"FrozenLake-v1" #
     """the id of the environment"""
     i: int = None 
-    total_timesteps: int = 10_000
+    total_timesteps: int = 100_000
     """total timesteps of the experiments"""
     learning_rate: float = 2.5e-4
     """the learning rate of the optimizer"""
@@ -57,7 +57,7 @@ class Args_:
     train_frequency: int = 10
     """the frequency of training"""
     
-    memory_size: int =1
+    memory_size: int =0
     """the size of the memory to store tha actions for a state"""
     
     def __post_init__(self):
