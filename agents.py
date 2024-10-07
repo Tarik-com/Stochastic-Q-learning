@@ -425,7 +425,6 @@ class DQNAgent:
         self.env = gym.make(args.env_id)
         self.actions_list=discretize_action_space(self.env,self.args.i)
         self.actions_tensor = torch.tensor(self.actions_list, dtype=torch.float32).to(self.device)
-        self.tensor_test=torch.tensor([1,2],dtype=torch.float32)
         self.q_network = QNetwork(self.env).to(self.device)
         self.target_network = QNetwork(self.env).to(self.device)
         self.target_network.load_state_dict(self.q_network.state_dict())
@@ -486,6 +485,7 @@ class DQNAgent:
 
     def update_q_network(self):
         data = self.replay_buffer.sample(self.batch_size)
+        
         with torch.no_grad():
             expanded_obs = data.observations.float().unsqueeze(1).expand(-1, self.actions_tensor.shape[0], -1) # Shape: [num_observations, num_actions, obs_dim]
             expanded_actions = self.actions_tensor.unsqueeze(0).expand(data.observations.shape[0], -1, -1)# Shape: [num_observations, num_actions, action_dim]
@@ -493,14 +493,14 @@ class DQNAgent:
             obs_actions_flattened = obs_actions_combined.view(-1, obs_actions_combined.shape[-1]) # Shape: [num_observations * num_actions, obs_dim + action_dim]
             q_values = self.target_network(obs_actions_flattened) #shape [num_observations * num_actions, 1]
             q_values = q_values.view(data.observations.shape[0], self.actions_tensor.shape[0]) #shape [num_observations, num_actions]
-            best_indices = torch.argmax(q_values, dim=1) 
-
-            target_values= data.rewards +self.args.gamma * self.target_network(torch.cat((data.observations.float(),self.actions_tensor[best_indices]),dim=-1))
-
-        old_val = self.q_network( torch.cat( (data.observations.float(),data.actions.float()),-1 ) ).squeeze()
+            best_indices = torch.argmax(q_values, dim=1)
+            target_values= data.rewards.to(self.device) +self.args.gamma * self.target_network(torch.cat((data.observations.float(),self.actions_tensor[best_indices]),dim=-1))
+        old_val = self.q_network( torch.cat( (data.observations.float(),data.actions.float()),-1 ) )
+    
         loss = F.mse_loss(target_values, old_val)
         self.optimizer.zero_grad()
         loss.backward()
+
         self.optimizer.step()
 
         if self.global_step % 100 == 0:
@@ -517,10 +517,10 @@ class DQNAgent:
 class Stoch_DQNAgent:
     def __init__(self, args: Args):
         self.args = args
-        #self.M_subset=deque(maxlen=args.M) # List
         self.device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
         self.env = gym.make(args.env_id)
         self.actions_list=discretize_action_space(self.env,self.args.i)
+        self.actions_tensor = torch.tensor(self.actions_list, dtype=torch.float32).to(self.device)
         self.q_network = QNetwork(self.env).to(self.device)
         self.target_network = QNetwork(self.env).to(self.device)
         self.target_network.load_state_dict(self.q_network.state_dict())
@@ -536,7 +536,8 @@ class Stoch_DQNAgent:
             handle_timeout_termination=False,
         )
         self.writer = SummaryWriter(f"runs/{args.env_id}_{int(time.time())}")
-        self.global_step = 0
+        
+        #self.global_step = 0
         self.rewards=[]
         self.reward_per_episode=[]
         self.sum_reward=0
@@ -545,15 +546,18 @@ class Stoch_DQNAgent:
         if random.random() <self.epsilons[self.global_step]:
             return np.array(random.choice(self.actions_list))
         else:
-            obs_tensor = torch.Tensor(obs).to(self.device)
-            Action_subset = self.replay_buffer.sample(self.batch_size).actions
+            data= self.replay_buffer.sample(self.buffer_size)
+            self.actions_tensor=
+            # sample log(n) action from buffer size
+            obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(self.device)  # [1, obs_dim]
+            expanded_obs = obs_tensor.expand(self.actions_tensor.shape[0], -1) #shape: [num_actions, obs_dim]
+            input_tensor = torch.cat((expanded_obs, self.actions_tensor), dim=-1) #shape: [num_actions, obs_dim + action_dim]
             with torch.no_grad():
-                combined_tensors=[torch.cat( (obs_tensor,torch.tensor(a, dtype=torch.float32)) ) for a in Action_subset]
-                input_tensor = torch.stack(combined_tensors)
-                q_values=self.q_network(input_tensor)
-                best_action_index = torch.argmax(q_values)
-                action = Action_subset[best_action_index.item()] 
-            return np.array(action)
+                q_values = self.q_network(input_tensor)
+            best_action_index = torch.argmax(q_values).item()
+            action = self.actions_tensor[best_action_index].cpu().numpy()
+            return action
+        
 
     def train(self):
         obs, _ = self.env.reset(seed=self.args.seed)

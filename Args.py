@@ -30,7 +30,7 @@ class Args_:
     env_id: str ="HalfCheetah-v4"#"InvertedPendulum-v4"#"FrozenLake-v1"#"CliffWalking-v0"# # "InvertedPendulum-v4" # # # #"FrozenLake-v1" #
     """the id of the environment"""
     i: int = None 
-    total_timesteps: int = 1_000
+    total_timesteps: int = 10_000
     """total timesteps of the experiments"""
     num_envs: int = 1
     """the number of parallel game environments"""
