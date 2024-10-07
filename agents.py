@@ -420,41 +420,44 @@ class Stoch_SARSAAgent:
 # DQN Agent
 class DQNAgent:
     def __init__(self, args: Args):
-        self.args = args
         self.device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
+        self.args = args
         self.env = gym.make(args.env_id)
+        self.actions_list=discretize_action_space(self.env,self.args.i)
+        self.actions_tensor = torch.tensor(self.actions_list, dtype=torch.float32).to(self.device)
+        self.tensor_test=torch.tensor([1,2],dtype=torch.float32)
         self.q_network = QNetwork(self.env).to(self.device)
         self.target_network = QNetwork(self.env).to(self.device)
         self.target_network.load_state_dict(self.q_network.state_dict())
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=args.learning_rate)
+        self.epsilons = epsilon_fun(self.args.total_timesteps)
+        self.buffer_size=int(2*np.log(len(self.actions_list)))
+        self.batch_size=int(np.log(len(self.actions_list)))
         self.replay_buffer = ReplayBuffer(
-            args.buffer_size,
+            self.buffer_size,
             self.env.observation_space,
             self.env.action_space,
             self.device,
-            handle_timeout_termination=False,
-        
-        )
+            handle_timeout_termination=False,)
         self.writer = SummaryWriter(f"runs/{args.env_id}_{int(time.time())}")
-        self.global_step = 0
-        self.actions_list=discretize_action_space(self.env,self.args.i)
+        
+        #self.global_step = 0
         self.rewards=[]
+        self.reward_per_episode=[]
+        self.sum_reward=0
 
     def select_action(self, obs):
-        epsilon = linear_schedule(
-            self.args.start_e, self.args.end_e, self.args.exploration_fraction * self.args.total_timesteps, self.global_step
-        )
-        if random.random() < epsilon:
+        if random.random() < self.epsilons[self.global_step]:
             return np.array(random.choice(self.actions_list))
         else:
-            obs_tensor = torch.Tensor(obs).to(self.device)
+            obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(self.device)  # [1, obs_dim]
+            expanded_obs = obs_tensor.expand(self.actions_tensor.shape[0], -1) #shape: [num_actions, obs_dim]
+            input_tensor = torch.cat((expanded_obs, self.actions_tensor), dim=-1) #shape: [num_actions, obs_dim + action_dim]
             with torch.no_grad():
-                combined_tensors=[torch.cat( (obs_tensor,torch.tensor(a, dtype=torch.float32)) ) for a in self.actions_list]
-                input_tensor = torch.stack(combined_tensors)
-                q_values=self.q_network(input_tensor)
-                best_action_index = torch.argmax(q_values)
-                action = self.actions_list[best_action_index.item()] 
-            return np.array(action)
+                q_values = self.q_network(input_tensor)
+            best_action_index = torch.argmax(q_values).item()
+            action = self.actions_tensor[best_action_index].cpu().numpy()
+            return action
 
     def train(self):
         obs, _ = self.env.reset(seed=self.args.seed)
@@ -464,9 +467,8 @@ class DQNAgent:
             done = terminated or truncated
             self.replay_buffer.add(obs, next_obs, action, reward, done,_)
             obs = next_obs
+            self.sum_reward=self.sum_reward+reward
             self.rewards.append(reward)
-
-            
             # Start learning after a certain number of steps
             if self.global_step > self.args.learning_starts:
                 if self.global_step % self.args.train_frequency == 0:
@@ -477,17 +479,26 @@ class DQNAgent:
                     self.update_target_network()
 
             if done:
+                self.reward_per_episode.append(self.sum_reward)
+                self.sum_reward=0
                 obs, _ = self.env.reset(seed=self.args.seed)
-        return self.rewards
+        return self.rewards,self.reward_per_episode
 
     def update_q_network(self):
-        data = self.replay_buffer.sample(self.args.batch_size)
+        data = self.replay_buffer.sample(self.batch_size)
         with torch.no_grad():
-            target_max = self.target_network(torch.cat((data.observations.float(),data.actions.float()),-1)).max(dim=1)[0]
-            td_target = data.rewards + self.args.gamma * target_max * (1 - data.dones)
-        old_val = self.q_network( torch.cat( (data.observations.float(),data.actions.float()),-1 ) )
-        loss = F.mse_loss(td_target, old_val)
+            expanded_obs = data.observations.float().unsqueeze(1).expand(-1, self.actions_tensor.shape[0], -1) # Shape: [num_observations, num_actions, obs_dim]
+            expanded_actions = self.actions_tensor.unsqueeze(0).expand(data.observations.shape[0], -1, -1)# Shape: [num_observations, num_actions, action_dim]
+            obs_actions_combined = torch.cat((expanded_obs, expanded_actions), dim=-1) # Shape: [num_observations, num_actions, obs_dim + action_dim]
+            obs_actions_flattened = obs_actions_combined.view(-1, obs_actions_combined.shape[-1]) # Shape: [num_observations * num_actions, obs_dim + action_dim]
+            q_values = self.target_network(obs_actions_flattened) #shape [num_observations * num_actions, 1]
+            q_values = q_values.view(data.observations.shape[0], self.actions_tensor.shape[0]) #shape [num_observations, num_actions]
+            best_indices = torch.argmax(q_values, dim=1) 
 
+            target_values= data.rewards +self.args.gamma * self.target_network(torch.cat((data.observations.float(),self.actions_tensor[best_indices]),dim=-1))
+
+        old_val = self.q_network( torch.cat( (data.observations.float(),data.actions.float()),-1 ) ).squeeze()
+        loss = F.mse_loss(target_values, old_val)
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
@@ -506,15 +517,19 @@ class DQNAgent:
 class Stoch_DQNAgent:
     def __init__(self, args: Args):
         self.args = args
-        self.M_subset=deque(maxlen=args.M) # List
+        #self.M_subset=deque(maxlen=args.M) # List
         self.device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
         self.env = gym.make(args.env_id)
+        self.actions_list=discretize_action_space(self.env,self.args.i)
         self.q_network = QNetwork(self.env).to(self.device)
         self.target_network = QNetwork(self.env).to(self.device)
         self.target_network.load_state_dict(self.q_network.state_dict())
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=args.learning_rate)
+        self.epsilons = epsilon_fun(self.args.total_timesteps)
+        self.buffer_size=int(2*np.log(len(self.actions_list)))
+        self.batch_size=int(np.log(len(self.actions_list)))
         self.replay_buffer = ReplayBuffer(
-            args.buffer_size,
+            self.buffer_size,
             self.env.observation_space,
             self.env.action_space,
             self.device,
@@ -522,23 +537,23 @@ class Stoch_DQNAgent:
         )
         self.writer = SummaryWriter(f"runs/{args.env_id}_{int(time.time())}")
         self.global_step = 0
+        self.rewards=[]
+        self.reward_per_episode=[]
+        self.sum_reward=0
 
     def select_action(self, obs):
-        epsilon = linear_schedule(
-            self.args.start_e, self.args.end_e, self.args.exploration_fraction * self.args.total_timesteps, self.global_step
-        )
-        if random.random() < epsilon:
-            action=self.env.action_space.sample()
-            self.M_subset.append(action)
-            return action
+        if random.random() <self.epsilons[self.global_step]:
+            return np.array(random.choice(self.actions_list))
         else:
-            Action_subset=Subset_function(self.env.action_space,self.M_subset)
             obs_tensor = torch.Tensor(obs).to(self.device)
+            Action_subset = self.replay_buffer.sample(self.batch_size).actions
             with torch.no_grad():
-                q_values = self.q_network(obs_tensor)
-                action=torch.argmax(q_values[Action_subset]).cpu().numpy()
-                self.M_subset.append(action)
-            return action
+                combined_tensors=[torch.cat( (obs_tensor,torch.tensor(a, dtype=torch.float32)) ) for a in Action_subset]
+                input_tensor = torch.stack(combined_tensors)
+                q_values=self.q_network(input_tensor)
+                best_action_index = torch.argmax(q_values)
+                action = Action_subset[best_action_index.item()] 
+            return np.array(action)
 
     def train(self):
         obs, _ = self.env.reset(seed=self.args.seed)
@@ -548,6 +563,8 @@ class Stoch_DQNAgent:
             done = terminated or truncated
             self.replay_buffer.add(obs, next_obs, action, reward, done,_)
             obs = next_obs
+            self.sum_reward=self.sum_reward+reward
+            self.rewards.append(reward)
 
             # Start learning after a certain number of steps
             if self.global_step > self.args.learning_starts:
@@ -559,12 +576,14 @@ class Stoch_DQNAgent:
                     self.update_target_network()
 
             if done:
+                self.reward_per_episode.append(self.sum_reward)
+                self.sum_reward=0
                 obs, _ = self.env.reset(seed=self.args.seed)
+        return self.rewards,self.reward_per_episode
 
     def update_q_network(self):
-        data = self.replay_buffer.sample(self.args.batch_size)
+        data = self.replay_buffer.sample(self.batch_size)
         with torch.no_grad():
-            Action_subset=Subset_function(self.env.action_space,self.M_subset)
             target_max = self.target_network(data.next_observations)[:,Action_subset].max(dim=1)[0].unsqueeze(1)
             td_target = data.rewards + (self.args.gamma * target_max * (1 - data.dones)) #[batchsize,1]
         
