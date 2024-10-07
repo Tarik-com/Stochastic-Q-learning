@@ -122,3 +122,10 @@ def discretize_action_space(env,i):
     a=np.linspace(low_bound,high_bound,i)
 
     return list(itertools.product(a,repeat=d))
+
+def epsilon_fun(n_episodes):
+    epsilon_array = np.zeros((n_episodes))
+    for i in range(n_episodes):
+        epsilon = args.min_epsilon + (args.max_epsilon-args.min_epsilon)*np.exp(-args.epsilon_decay_rate*i)
+        epsilon_array[i] = epsilon
+    return epsilon_array

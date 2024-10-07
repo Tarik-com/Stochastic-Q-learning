@@ -27,17 +27,17 @@ class Args_:
     """the user or org name of the model repository from the Hugging Face Hub"""
 
     # Algorithm specific arguments
-    env_id: str ="FrozenLake-v1"#"CliffWalking-v0"# # "InvertedPendulum-v4" # #"HalfCheetah-v4" # #"FrozenLake-v1" #
+    env_id: str ="HalfCheetah-v4"#"InvertedPendulum-v4"#"FrozenLake-v1"#"CliffWalking-v0"# # "InvertedPendulum-v4" # # # #"FrozenLake-v1" #
     """the id of the environment"""
     i: int = None 
-    total_timesteps: int = 100_000
+    total_timesteps: int = 1_000
     """total timesteps of the experiments"""
-    learning_rate: float = 2.5e-4
-    """the learning rate of the optimizer"""
     num_envs: int = 1
     """the number of parallel game environments"""
-    buffer_size: int = 10000
+    buffer_size: int = None
     """the replay memory buffer size"""
+    learning_rate: float = 0.001
+    """the learning rate of the optimizer"""
     gamma: float = 0.99
     """the discount factor gamma"""
     tau: float = 1.0
@@ -46,26 +46,27 @@ class Args_:
     """the timesteps it takes to update the target network"""
     batch_size: int = 128
     """the batch size of sample from the reply memory"""
-    start_e: float = 1
+    max_epsilon: float = 1
     """the starting epsilon for exploration"""
-    end_e: float = 0.05
+    min_epsilon: float = 0.01
     """the ending epsilon for exploration"""
-    exploration_fraction: float = 0.5
-    """the fraction of `total-timesteps` it takes from start-e to go end-e"""
-    learning_starts: int = 10000
+    epsilon_decay_rate: float = 0.995
+    """the epsilon decay rate"""
+    learning_starts: int = 128
     """timestep to start learning"""
-    train_frequency: int = 10
+    train_frequency: int = 1
     """the frequency of training"""
     
     memory_size: int =0
     """the size of the memory to store tha actions for a state"""
     
     def __post_init__(self):
-            if self.env_id == "HalfCheetah-v4":
-                self.i = 4
-            elif self.env_id == "InvertedPendulum-v4":
-                self.i = 512
-            else:
-                self.i=0
+        if self.env_id == "HalfCheetah-v4":
+            self.i = 4
+        elif self.env_id == "InvertedPendulum-v4":
+            self.i = 512
+        else:
+            self.i=0
+            
  
 
