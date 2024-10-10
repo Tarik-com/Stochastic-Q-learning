@@ -1,0 +1,1 @@
+###1 how to set the size of mini batch and check for the size of buffer size and sample size
