@@ -40,3 +40,4 @@ class MDPEnv(gym.Env):
         # Clean up (optional)
         pass
 
+env=MDPEnv()

@@ -30,9 +30,9 @@ class Args_:
     env_id: str ="HalfCheetah-v4"#"InvertedPendulum-v4"#"FrozenLake-v1"#"CliffWalking-v0"# # "InvertedPendulum-v4" # # # #"FrozenLake-v1" #
     """the id of the environment"""
     i: int = None 
-    total_timesteps: int = 2_000
+    total_timesteps: int = 200
     """total timesteps of the experiments"""
-    num_envs: int = 1
+    num_envs: int = 2
     """the number of parallel game environments"""
     buffer_size: int = None
     """the replay memory buffer size"""
@@ -42,7 +42,7 @@ class Args_:
     """the discount factor gamma"""
     tau: float = 1.0
     """the target network update rate"""
-    target_network_frequency: int = 500
+    target_network_frequency: int = 1#500
     """the timesteps it takes to update the target network"""
     batch_size: int = 128
     """the batch size of sample from the reply memory"""

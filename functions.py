@@ -116,12 +116,12 @@ def one_plot_1(data:list,names:list,window_size,y_name="rewards",x_name="steps",
 
 
 def discretize_action_space(env,i):
-    d=env.action_space.shape[0]
-    low_bound=env.action_space.low[0]
-    high_bound=env.action_space.high[0]
+    d=env.action_space.shape[1]
+    low_bound=env.action_space.low[0][0]
+    high_bound=env.action_space.high[0][0]
     a=np.linspace(low_bound,high_bound,i)
 
-    return list(itertools.product(a,repeat=d))
+    return np.array(list(itertools.product(a,repeat=d)))
 
 def epsilon_fun(n_episodes):
     epsilon_array = np.zeros((n_episodes))
