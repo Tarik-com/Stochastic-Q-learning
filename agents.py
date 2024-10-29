@@ -7,10 +7,14 @@ import torch.nn.functional as F
 import importlib
 
 from collections import deque
-from stable_baselines3.common.buffers import ReplayBuffer
+import buffers
+importlib.reload(buffers)
+from buffers import *
 from torch.utils.tensorboard import SummaryWriter
 import Network
+import Args
 importlib.reload(Network)
+importlib.reload(Args)
 from Network import *
 from functions import *
 import gymnasium as gym
@@ -422,7 +426,8 @@ class DQNAgent:
     def __init__(self, args: Args):
         self.device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
         self.args = args
-        self.env = gym.make(args.env_id)
+        ### modification
+        self.env = gym.make_vec(args.env_id,self.args.num_envs)
         self.actions_list=discretize_action_space(self.env,self.args.i)
         self.actions_tensor = torch.tensor(self.actions_list, dtype=torch.float32).to(self.device)
         self.q_network = QNetwork(self.env).to(self.device)
@@ -437,24 +442,28 @@ class DQNAgent:
             self.env.observation_space,
             self.env.action_space,
             self.device,
+            ### modification
+            n_envs=self.args.num_envs,
             handle_timeout_termination=False,)
         self.writer = SummaryWriter(f"runs/{args.env_id}_{int(time.time())}")
         
-        #self.global_step = 0
-        self.rewards=[]
-        self.reward_per_episode=[]
-        self.sum_reward=0
+        
+        self.reward_per_episode = np.zeros(self.args.num_envs)
+        self.sum_reward = np.zeros(self.args.num_envs)
 
     def select_action(self, obs):
         if random.random() < self.epsilons[self.global_step]:
-            return np.array(random.choice(self.actions_list))
+            return self.actions_list[np.random.choice(self.actions_list.shape[0],size=self.args.num_envs,replace=True)]
+        
         else:
-            obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(self.device)  # [1, obs_dim]
-            expanded_obs = obs_tensor.expand(self.actions_tensor.shape[0], -1) #shape: [num_actions, obs_dim]
-            input_tensor = torch.cat((expanded_obs, self.actions_tensor), dim=-1) #shape: [num_actions, obs_dim + action_dim]
+            obs_tensor = torch.tensor(obs, dtype=torch.float32).to(self.device)  # [n, obs_dim]
+            expanded_obs = obs_tensor.unsqueeze(1).expand(-1,self.actions_tensor.shape[0], -1) #shape: [n,num_actions, obs_dim]
+            expanded_obs = expanded_obs.reshape(-1, obs_tensor.shape[1])  # shape: [n * num_actions, obs_dim]
+            input_tensor = torch.cat((expanded_obs, self.actions_tensor.repeat(self.args.num_envs,1)), dim=-1) #shape: [n*num_actions, obs_dim + action_dim]
             with torch.no_grad():
-                q_values = self.q_network(input_tensor)
-            best_action_index = torch.argmax(q_values).item()
+                q_values = self.q_network(input_tensor)   
+            q_values = q_values.view(self.args.num_envs, self.actions_tensor.shape[0], -1)
+            best_action_index = torch.argmax(q_values,dim=1).squeeze(1)
             action = self.actions_tensor[best_action_index].cpu().numpy()
             return action
 
@@ -463,11 +472,13 @@ class DQNAgent:
         for self.global_step in range(self.args.total_timesteps):
             action = self.select_action(obs)
             next_obs, reward, terminated, truncated, _ = self.env.step(action)
-            done = terminated or truncated
+            done = np.logical_or(terminated,truncated)
+            #print(f"before buffer obs shape= {obs.shape} next obs shape= {next_obs.shape} action shape= {action.shape} reward shape {reward.shape} done shape {done.shape}")
             self.replay_buffer.add(obs, next_obs, action, reward, done,_)
+            
             obs = next_obs
             self.sum_reward=self.sum_reward+reward
-            self.rewards.append(reward)
+            
             # Start learning after a certain number of steps
             if self.global_step > self.args.learning_starts:
                 if self.global_step % self.args.train_frequency == 0:
@@ -477,41 +488,46 @@ class DQNAgent:
                 if self.global_step % self.args.target_network_frequency == 0:
                     self.update_target_network()
 
-            if done:
-                self.reward_per_episode.append(self.sum_reward)
-                self.sum_reward=0
-                obs, _ = self.env.reset(seed=self.args.seed)
-        return self.rewards,self.reward_per_episode
+            if done.any():
+                for i in range(self.args.num_envs): 
+                    if done[i]:
+                        self.reward_per_episode[i] += self.sum_reward[i] 
+                        self.sum_reward[i] = 0 
+                        obs[i], _ = self.env.reset(seed=self.args.seed) 
+
+        return self.reward_per_episode
 
     def update_q_network(self):
         data = self.replay_buffer.sample(self.batch_size)
-        
         with torch.no_grad():
-            expanded_obs = data.observations.float().unsqueeze(1).expand(-1, self.actions_tensor.shape[0], -1) # Shape: [num_observations, num_actions, obs_dim]
-            expanded_actions = self.actions_tensor.unsqueeze(0).expand(data.observations.shape[0], -1, -1)# Shape: [num_observations, num_actions, action_dim]
-            
-            obs_actions_combined = torch.cat((expanded_obs, expanded_actions), dim=-1) # Shape: [num_observations, num_actions, obs_dim + action_dim]
-            obs_actions_flattened = obs_actions_combined.view(-1, obs_actions_combined.shape[-1]) # Shape: [num_observations * num_actions, obs_dim + action_dim]
-            
-            q_values = self.target_network(obs_actions_flattened) #shape [num_observations * num_actions, 1]
-            q_values = q_values.view(data.observations.shape[0], self.actions_tensor.shape[0]) #shape [num_observations, num_actions]
-            
-            best_indices = torch.argmax(q_values, dim=1)
-            
-            best_action_q_values = q_values[range(q_values.size(0)), best_indices]  # Shape: [num_observations]
-            
-            target_values = data.rewards.squeeze().to(self.device) + self.args.gamma * best_action_q_values
+            # Expand observations and actions for parallel processing
+            expanded_obs = data.observations.float().unsqueeze(2).expand(-1, -1, self.actions_tensor.shape[0], -1)  #[batch,n_envs,num_actions,obs_dim]
+            expanded_actions = self.actions_tensor.unsqueeze(0).unsqueeze(0).expand(data.observations.shape[0], data.observations.shape[1], -1, -1) #[batch,n_envs,num_actions,action_dim]
+            # Combine observations and actions
+            obs_actions_combined = torch.cat((expanded_obs, expanded_actions), dim=-1) #[batch,n_envs,num_actions,obs_dim+action_dim]
+            obs_actions_flattened = obs_actions_combined.view(-1, obs_actions_combined.shape[-1]) #[batch*n_envs*num_actions,obs_dim+action_dim]
+            # Get Q-values
+            q_values = self.target_network(obs_actions_flattened) #[batch*n_envs*num_actions,1]
+            q_values = q_values.view(data.observations.shape[0], data.observations.shape[1], self.actions_tensor.shape[0])#[batch,n_envs,num_actions]
 
-            #target_values= data.rewards.to(self.device) +self.args.gamma * self.target_network(torch.cat((data.observations.float(),self.actions_tensor[best_indices]),dim=-1))
-        
-        old_val = self.q_network( torch.cat( (data.observations.float(),data.actions.float()),-1 ) )
-        #print(f" old val shape {old_val.shape} target shape {target_values.unsqueeze(1).shape}")
-        loss = F.mse_loss( old_val , target_values.unsqueeze(1))
+            # Identify best actions per environment
+            best_indices = torch.argmax(q_values, dim=2) # [batch_size,n_envs]
+            best_action_q_values = q_values[torch.arange(data.observations.shape[0]).unsqueeze(1), torch.arange(data.observations.shape[1]), best_indices] # [batch_size,n_envs]
+
+            # Calculate target values
+            target_values = data.rewards.squeeze(-1).to(self.device) + self.args.gamma * best_action_q_values # [batch_size,n_envs]
+
+        # Old Q-values and loss calculation
+        old_val = self.q_network(torch.cat((data.observations.float(), data.actions.float()), dim=-1))
+
+        loss = F.mse_loss(old_val, target_values.unsqueeze(-1)) #[batch_size, n_envs, 1] == [batch_size, n_envs, 1]
+
+        # Update Q-network
         self.optimizer.zero_grad()
         loss.backward()
-
         self.optimizer.step()
-
+        
+        
         if self.global_step % 100 == 0:
             self.writer.add_scalar("losses/td_loss", loss, self.global_step)
 
@@ -546,7 +562,6 @@ class Stoch_DQNAgent:
         self.writer = SummaryWriter(f"runs/{args.env_id}_{int(time.time())}")
         
         #self.global_step = 0
-        self.rewards=[]
         self.reward_per_episode=[]
         self.sum_reward=0
 
@@ -577,8 +592,7 @@ class Stoch_DQNAgent:
             done = terminated or truncated
             self.replay_buffer.add(obs, next_obs, action, reward, done,_)
             obs = next_obs
-            self.sum_reward=self.sum_reward+reward
-            self.rewards.append(reward)
+            self.sum_reward=self.sum_reward + reward
 
             # Start learning after a certain number of steps
             if self.global_step > self.args.learning_starts:
@@ -593,7 +607,7 @@ class Stoch_DQNAgent:
                 self.reward_per_episode.append(self.sum_reward)
                 self.sum_reward=0
                 obs, _ = self.env.reset(seed=self.args.seed)
-        return self.rewards,self.reward_per_episode
+        return self.reward_per_episode
 
     def update_q_network(self):
         data = self.replay_buffer.sample(2*self.batch_size)
@@ -659,7 +673,6 @@ class DDQNAgent:
         self.writer = SummaryWriter(f"runs/{args.env_id}_{int(time.time())}")
         
         #self.global_step = 0
-        self.rewards=[]
         self.reward_per_episode=[]
         self.sum_reward=0
 
@@ -685,7 +698,6 @@ class DDQNAgent:
             self.replay_buffer.add(obs, next_obs, action, reward, done,_)
             obs = next_obs
             self.sum_reward=self.sum_reward+reward
-            self.rewards.append(reward)
             # Start learning after a certain number of steps
             if self.global_step > self.args.learning_starts:
                 if self.global_step % self.args.train_frequency == 0:
@@ -699,7 +711,7 @@ class DDQNAgent:
                 self.reward_per_episode.append(self.sum_reward)
                 self.sum_reward=0
                 obs, _ = self.env.reset(seed=self.args.seed)
-        return self.rewards,self.reward_per_episode
+        return self.reward_per_episode
 
     def update_q_network(self):
         data = self.replay_buffer.sample(self.batch_size)
