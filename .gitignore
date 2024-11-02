@@ -2,3 +2,8 @@
 __pycache__
 Dicts/*.pkl
 runs
+server_run.py 
+server_run_2.py
+.bash_history
+DQN_run.txt
+DQN_run1.pkl
