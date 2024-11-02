@@ -30,7 +30,7 @@ class Args_:
     env_id: str ="HalfCheetah-v4"#"InvertedPendulum-v4"#"FrozenLake-v1"#"CliffWalking-v0"# # "InvertedPendulum-v4" # # # #"FrozenLake-v1" #
     """the id of the environment"""
     i: int = None 
-    total_timesteps: int = 200
+    total_timesteps: int = 2000#6_250_000
     """total timesteps of the experiments"""
     num_envs: int = 2
     """the number of parallel game environments"""
@@ -52,9 +52,9 @@ class Args_:
     """the ending epsilon for exploration"""
     epsilon_decay_rate: float = 0.995
     """the epsilon decay rate"""
-    learning_starts: int = 128
+    learning_starts: int = 20
     """timestep to start learning"""
-    train_frequency: int = 1
+    train_frequency: int = 5
     """the frequency of training"""
     
     memory_size: int =0

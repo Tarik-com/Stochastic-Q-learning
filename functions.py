@@ -1,5 +1,6 @@
 
 import numpy as np
+import torch
 import matplotlib.pyplot as plt
 #%matplotlib inline
 import itertools
@@ -129,3 +130,32 @@ def epsilon_fun(n_episodes):
         epsilon = args.min_epsilon + (args.max_epsilon-args.min_epsilon)*np.exp(-args.epsilon_decay_rate*i)
         epsilon_array[i] = epsilon
     return epsilon_array
+
+def Target_Values(observations,actions,rewards,target_network,q_network,gamma):
+        """
+        The size of observations needs to be [batch,obs_dim]
+        The size of actions needs to be [num_actions, action_dim]
+        Actions is a torch.Tensor
+        Observations is torch.Tensor
+        """
+        expanded_obs = observations.float().unsqueeze(1).expand(-1, actions.shape[0], -1)  # [batch, num_actions, obs_dim]
+        expanded_actions = actions.unsqueeze(0).expand(observations.shape[0], -1, -1)  # [batch, num_actions, action_dim]
+        # Combine observations and actions
+        obs_actions_combined = torch.cat((expanded_obs, expanded_actions), dim=-1)  # [batch, num_actions, obs_dim + action_dim]
+        obs_actions_flattened = obs_actions_combined.view(-1, obs_actions_combined.shape[-1])  # [batch * num_actions, obs_dim + action_dim]
+        # Get Q-values
+        q_values = target_network(obs_actions_flattened)  # [batch * num_actions, 1]
+        q_values = q_values.view(observations.shape[0], actions.shape[0])  # [batch, num_actions]
+        # Identify best actions
+        best_indices = torch.argmax(q_values, dim=1)  # [batch]
+        
+        best_action_q_values = q_values[torch.arange(q_values.size(0)), best_indices]  # [batch]
+        target_values = rewards + gamma * q_network(torch.cat((observations.float(),actions[best_indices]),dim=-1))
+        return target_values
+        
+    
+        
+        
+        
+        
+        
