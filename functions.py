@@ -2,6 +2,7 @@
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FuncFormatter
 #%matplotlib inline
 import itertools
 from collections import deque
@@ -100,14 +101,25 @@ def one_plot(data,window_size,names,y_name,title_,hline=True,all_=False):
     plt.legend()
     plt.show()
 
-def one_plot_1(data:list,names:list,window_size,y_name="rewards",x_name="steps",title=""):
+def format_func(value, tick_position):
+    return f'{int(value):_}'
+
+def one_plot_1(data:list,names:list,window_size=100,y_name="Rewards",x_name="Steps",title=""):
     plt.figure(figsize=(7,5))
     i=0
-    for d in data:
-        tmp=moving_average(d,window_size)
-        plt.plot(np.arange(window_size - 1, len(d)), tmp,label=f"{names[i]}")
-        i+=1
-        
+    arr = np.array(data)
+    if arr.ndim==1:
+        tmp=moving_average(data,window_size)
+        plt.plot(np.arange(window_size - 1, len(data)), tmp,label=names)
+    else:
+        for d in data:
+            tmp=moving_average(d,window_size)
+            plt.plot(np.arange(window_size - 1, len(d)), tmp,label=f"{names[i]}")
+            
+            i+=1
+    plt.gca().xaxis.set_major_formatter(FuncFormatter(format_func))
+    #plt.gca().yaxis.set_major_formatter(FuncFormatter(format_func))
+    
     plt.ylabel(y_name)
     plt.xlabel(x_name)
     plt.title(title)

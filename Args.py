@@ -27,12 +27,12 @@ class Args_:
     """the user or org name of the model repository from the Hugging Face Hub"""
 
     # Algorithm specific arguments
-    env_id: str ="HalfCheetah-v4"#"InvertedPendulum-v4"#"FrozenLake-v1"#"CliffWalking-v0"# # "InvertedPendulum-v4" # # # #"FrozenLake-v1" #
+    env_id: str ="InvertedPendulum-v4"#"FrozenLake-v1"#"CliffWalking-v0"##"CliffWalking-v0"#"HalfCheetah-v4"#"InvertedPendulum-v4"#"FrozenLake-v1"## # "InvertedPendulum-v4" # # # #"FrozenLake-v1" #
     """the id of the environment"""
     i: int = None 
-    total_timesteps: int = 2000#6_250_000
+    total_timesteps: int = 500_000 #6_250_000
     """total timesteps of the experiments"""
-    num_envs: int = 2
+    num_envs: int = 16
     """the number of parallel game environments"""
     buffer_size: int = None
     """the replay memory buffer size"""
@@ -42,8 +42,6 @@ class Args_:
     """the discount factor gamma"""
     tau: float = 1.0
     """the target network update rate"""
-    target_network_frequency: int = 1#500
-    """the timesteps it takes to update the target network"""
     batch_size: int = 128
     """the batch size of sample from the reply memory"""
     max_epsilon: float = 1
@@ -52,12 +50,18 @@ class Args_:
     """the ending epsilon for exploration"""
     epsilon_decay_rate: float = 0.995
     """the epsilon decay rate"""
-    learning_starts: int = 20
+    learning_starts: int = 50_000
     """timestep to start learning"""
     train_frequency: int = 5
     """the frequency of training"""
+    target_network_frequency: int = 5_000 # cha,ged from 500 to 5_000
+    """the timesteps it takes to update the target network"""
+    # for the stochastic learning
     
-    memory_size: int =0
+    C:int=2
+    """total size of the action subset"""
+    
+    memory_size: int =2
     """the size of the memory to store tha actions for a state"""
     
     def __post_init__(self):

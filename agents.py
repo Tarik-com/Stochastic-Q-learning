@@ -7,8 +7,6 @@ import torch.nn.functional as F
 import importlib
 
 from collections import deque
-import buffers
-importlib.reload(buffers)
 from stable_baselines3.common.buffers import ReplayBuffer
 from torch.utils.tensorboard import SummaryWriter
 import Network
@@ -34,7 +32,7 @@ class RandomAgent:
         return random.randint(0, self.env.action_space.n - 1)  
     
     def train(self):
-        obs, _ = self.env.reset(seed=self.args.seed)
+        obs, _ = self.env.reset()
         for self.global_step in range(self.args.total_timesteps):
             action = self.select_action()
             next_obs, reward, terminated, truncated, _ = self.env.step(action)
@@ -42,7 +40,7 @@ class RandomAgent:
             obs=next_obs
             if done:
                 self.episodes_lengths.append(self.global_step)
-                obs, _ = self.env.reset(seed=self.args.seed)
+                obs, _ = self.env.reset()
             self.rewards.append(reward)
             self.sum_rewards+=reward
             self.accumulative_rewards.append(self.sum_rewards)
@@ -82,19 +80,20 @@ class QLearningAgent:
         if not done:
             target += self.gamma * np.max(self.q_table[next_obs])
         
-        self.q_table[obs, action] += 0.05 * (target - self.q_table[obs, action])   
+        self.q_table[obs, action] += alpha * (target - self.q_table[obs, action])   
     def train(self):
-        obs, _ = self.env.reset(seed=self.args.seed)
+        obs, _ = self.env.reset()
         for self.global_step in range(self.args.total_timesteps):
             action = self.select_action(obs)
             
             next_obs, reward, terminated, truncated, _ = self.env.step(action)
             done = terminated or truncated
+
             self.learn(obs,action,reward,next_obs,done)
             obs=next_obs
             if done:
                 self.episodes_lengths.append(self.global_step)
-                obs, _ = self.env.reset(seed=self.args.seed)
+                obs, _ = self.env.reset()
             self.rewards.append(reward)
             self.sum_rewards+=reward
             self.accumulative_rewards.append(self.sum_rewards)
@@ -105,9 +104,8 @@ class Stoch_QLearningAgent:
     def __init__(self, args:Args):
         self.args=args
         self.gamma=0.95
-        self.alpha=0.05
         self.env = gym.make(args.env_id)
-        self.C=2#int(2*np.log(self.env.action_space.n))
+        self.C=self.args.C 
         
         # set-up
         if args.env_id=="FrozenLake-v1":
@@ -142,11 +140,11 @@ class Stoch_QLearningAgent:
         if not done:
             target += self.gamma * np.max(self.q_table[next_obs,Action_subset])
         
-        self.q_table[obs, action] += 0.05 * (target - self.q_table[obs, action])
+        self.q_table[obs, action] += alpha * (target - self.q_table[obs, action])
             
             
     def train(self):
-        obs, _ = self.env.reset(seed=self.args.seed)
+        obs, _ = self.env.reset()
         for self.global_step in range(self.args.total_timesteps):
             action = self.select_action(obs)
             
@@ -160,7 +158,7 @@ class Stoch_QLearningAgent:
             obs=next_obs
             if done:
                 self.episodes_lengths.append(self.global_step)
-                obs, _ = self.env.reset(seed=self.args.seed)
+                obs, _ = self.env.reset()
             self.rewards.append(reward)
             self.sum_rewards+=reward
             self.accumulative_rewards.append(self.sum_rewards)
@@ -212,7 +210,7 @@ class DoubleQLearningAgent:
             self.q_table2[obs, action] += alpha * (target - self.q_table2[obs, action])
  
     def train(self):
-        obs, _ = self.env.reset(seed=self.args.seed)
+        obs, _ = self.env.reset()
         for self.global_step in range(self.args.total_timesteps):
             action = self.select_action(obs)
             next_obs, reward, terminated, truncated, _ = self.env.step(action)
@@ -221,7 +219,7 @@ class DoubleQLearningAgent:
             obs=next_obs
             if done:
                 self.episodes_lengths.append(self.global_step)
-                obs, _ = self.env.reset(seed=self.args.seed)
+                obs, _ = self.env.reset()
             self.rewards.append(reward)
             self.sum_rewards+=reward
             self.accumulative_rewards.append(self.sum_rewards)
@@ -233,8 +231,7 @@ class Stoch_DoubleQLearningAgent:
         self.args=args
         self.gamma=0.95
         self.env = gym.make(args.env_id)
-        self.C=int(2*np.log(self.env.action_space.n))
-        self.R= self.C - self.args.memory_size
+        self.C=self.args.C
         
         # set-up
         if args.env_id=="FrozenLake-v1":
@@ -283,7 +280,7 @@ class Stoch_DoubleQLearningAgent:
             self.q_table2[obs, action] += alpha * (target - self.q_table2[obs, action])
  
     def train(self):
-        obs, _ = self.env.reset(seed=self.args.seed)
+        obs, _ = self.env.reset()
         for self.global_step in range(self.args.total_timesteps):
             action = self.select_action(obs)
             
@@ -297,7 +294,7 @@ class Stoch_DoubleQLearningAgent:
             obs=next_obs
             if done:
                 self.episodes_lengths.append(self.global_step)
-                obs, _ = self.env.reset(seed=self.args.seed)
+                obs, _ = self.env.reset()
             self.rewards.append(reward)
             self.sum_rewards+=reward
             self.accumulative_rewards.append(self.sum_rewards)
@@ -309,6 +306,7 @@ class SARSAAgent:
         self.args=args
         self.gamma=0.95
         self.env = gym.make(args.env_id)
+        
         if args.env_id=="FrozenLake-v1":
             self.q_table=np.full((self.env.observation_space.n, self.env.action_space.n),0.9)
         else:
@@ -325,6 +323,7 @@ class SARSAAgent:
         self.D,epsilon=update_D(obs,self.D)
         if np.random.rand() <= epsilon:
             return random.randint(0, self.env.action_space.n - 1) 
+        
         return np.argmax(self.q_table[obs]) 
     
     def learn(self, obs, action, reward, next_obs,next_action, done):
@@ -336,8 +335,9 @@ class SARSAAgent:
         self.q_table[obs, action] += alpha * (target - self.q_table[obs, action])   
         
     def train(self):
-        obs, _ = self.env.reset(seed=self.args.seed)
+        obs, _ = self.env.reset()
         action=self.select_action(obs)
+        
         for self.global_step in range(self.args.total_timesteps):
             next_obs, reward, terminated, truncated, _ = self.env.step(action)
             done = terminated or truncated
@@ -347,7 +347,8 @@ class SARSAAgent:
             action=next_action
             if done:
                 self.episodes_lengths.append(self.global_step)
-                obs, _ = self.env.reset(seed=self.args.seed)
+                obs, _ = self.env.reset()
+                
             self.rewards.append(reward)
             self.sum_rewards+=reward
             self.accumulative_rewards.append(self.sum_rewards)
@@ -359,8 +360,7 @@ class Stoch_SARSAAgent:
         self.args=args
         self.gamma=0.95
         self.env = gym.make(args.env_id)
-        self.C=int(2*np.log(self.env.action_space.n))
-        self.R= self.C - self.args.memory_size
+        self.C=self.args.C
         
         # set-up
         if args.env_id=="FrozenLake-v1":
@@ -370,6 +370,8 @@ class Stoch_SARSAAgent:
         self.states_history={}
         self.D={}
         self.Z={}
+        self.alphas=[]
+        self.epsilons=[]
         # results
         self.episodes_lengths=[]
         self.rewards=[]
@@ -379,12 +381,10 @@ class Stoch_SARSAAgent:
     def select_action(self,obs):
         self.D,epsilon=update_D(obs,self.D)
         if np.random.rand() <= epsilon:
-            
-            action=random.randint(0, self.env.action_space.n - 1) 
-            return action
+            return random.randint(0, self.env.action_space.n - 1)
+        
         Action_subset=Subset_function(self.env.action_space.n,self.states_history[obs],self.C)
-        action=np.argmax(self.q_table[obs,Action_subset]) 
-        return action
+        return Action_subset[np.argmax(self.q_table[obs,Action_subset]) ]
     
     def learn(self, obs, action, reward, next_obs,next_action, done):
         self.Z,alpha=update_Z(obs,action,self.Z)
@@ -395,7 +395,7 @@ class Stoch_SARSAAgent:
         self.q_table[obs, action] += alpha * (target - self.q_table[obs, action])   
          
     def train(self):
-        obs, _ = self.env.reset(seed=self.args.seed)
+        obs, _ = self.env.reset()
         if obs not in self.states_history:
             self.states_history[obs] = deque(maxlen=self.args.memory_size)
             
@@ -404,16 +404,17 @@ class Stoch_SARSAAgent:
             next_obs, reward, terminated, truncated, _ = self.env.step(action)
             self.states_history[obs].append(action)
             done = terminated or truncated
+            
             if next_obs not in self.states_history:
                 self.states_history[next_obs] = deque(maxlen=self.args.memory_size)
             next_action=self.select_action(next_obs)
-            
+            #print(f"next obs {next_obs} history: {self.states_history[next_obs]} reward: {reward} next action: {next_action} obs: {obs} history {self.states_history[obs]}")
             self.learn(obs,action,reward,next_obs,next_action,done)
             obs=next_obs
             action=next_action
             if done:
                 self.episodes_lengths.append(self.global_step)
-                obs, _ = self.env.reset(seed=self.args.seed)
+                obs, _ = self.env.reset()
                 
             # results
             self.rewards.append(reward)
@@ -428,14 +429,16 @@ class DQNAgent:
         self.args = args
         self.env = gym.make_vec(args.env_id,self.args.num_envs)
         self.actions_list=discretize_action_space(self.env,self.args.i)
+        #self.actions_list=[0,1,2]
         self.actions_tensor = torch.tensor(self.actions_list, dtype=torch.float32).to(self.device)
+        #self.actions_tensor = torch.tensor(self.actions_list, dtype=torch.int).reshape(-1,1).to(self.device)
         self.q_network = QNetwork(self.env).to(self.device)
         self.target_network = QNetwork(self.env).to(self.device)
         self.target_network.load_state_dict(self.q_network.state_dict())
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=args.learning_rate)
         self.epsilons = epsilon_fun(self.args.total_timesteps)
-        self.buffer_size=int(2*np.log(len(self.actions_list)))
-        self.batch_size=int(np.log(len(self.actions_list)))
+        self.buffer_size=100_000 #int(2*np.log(len(self.actions_list)))
+        self.batch_size=16#int(np.log(len(self.actions_list)))
         self.replay_buffer = ReplayBuffer(
             self.buffer_size,
             self.env.single_observation_space,
@@ -449,9 +452,14 @@ class DQNAgent:
 
     def select_action(self, obs):
         if random.random() < self.epsilons[self.global_step]:
+            #return np.random.choice(self.actions_list,size=self.args.num_envs,replace=True)
             return self.actions_list[np.random.choice(self.actions_list.shape[0],size=self.args.num_envs,replace=True)]
         
         else:
+            """
+            obs_tensor=obs_tensor.view(obs_tensor.size(0), -1)
+            action = self.actions_tensor[best_action_index].reshape(-1).cpu().numpy() # [n,action_dim]
+          """
             obs_tensor = torch.tensor(obs, dtype=torch.float32).to(self.device)  # [n, obs_dim]
             expanded_obs = obs_tensor.unsqueeze(1).expand(-1,self.actions_tensor.shape[0], -1) #shape: [n,num_actions, obs_dim]
             expanded_obs = expanded_obs.reshape(-1, obs_tensor.shape[1])  # shape: [n * num_actions, obs_dim]
@@ -461,17 +469,18 @@ class DQNAgent:
             q_values = q_values.view(self.args.num_envs, self.actions_tensor.shape[0], -1) #shape [n,num_actions,1]
             best_action_index = torch.argmax(q_values,dim=1).squeeze(1) # [n]
             action = self.actions_tensor[best_action_index].cpu().numpy() # [n,action_dim]
-            return action
-
+            return action 
+            
     def train(self):
-        obs, _ = self.env.reset(seed=self.args.seed)
+        self.actions=[]
+        obs, _ = self.env.reset()
         for self.global_step in range(self.args.total_timesteps):
             action = self.select_action(obs)
             next_obs, reward, terminated, truncated, _ = self.env.step(action)
             done = np.logical_or(terminated,truncated)
             for i in range(self.args.num_envs):
                 self.replay_buffer.add(obs[i], next_obs[i], action[i], reward[i], done[i],_)
-            
+                self.actions.append(action[i])
             obs = next_obs
             self.sum_reward=self.sum_reward + reward
             
@@ -489,29 +498,44 @@ class DQNAgent:
                     if done[i]:
                         self.average_rewards.append(self.sum_reward[i])
                         self.sum_reward[i] = 0 
-
-        return self.average_rewards
+        # showing q-value of each action
+        q_values_list=[]
+        for i in range(5):
+            obs,_=self.env.reset()
+            action = self.select_action(obs)
+            #
+            obs_tensor = torch.tensor(obs, dtype=torch.float32).to(self.device)  # [n, obs_dim]
+            expanded_obs = obs_tensor.unsqueeze(1).expand(-1,self.actions_tensor.shape[0], -1) #shape: [n,num_actions, obs_dim]
+            expanded_obs = expanded_obs.reshape(-1, obs_tensor.shape[1])  # shape: [n * num_actions, obs_dim]
+            input_tensor = torch.cat((expanded_obs, self.actions_tensor.repeat(self.args.num_envs,1)), dim=-1) #shape: [n*num_actions, obs_dim + action_dim]
+            with torch.no_grad():
+                q_values = self.q_network(input_tensor) #shape [n*num_actions,1]
+            q_values = q_values.view(self.args.num_envs, self.actions_tensor.shape[0], -1) #shape [n,num_actions,1]
+            q_values_list.append(q_values)
+        return self.average_rewards,self.actions, q_values_list
     
     def update_q_network(self):
+        """
+        target_values = Target_Values(data.observations.view(self.batch_size,-1),self.actions_tensor,rewards,self.target_network,self.target_network,self.args.gamma)
+        old_val = self.q_network(torch.cat((data.observations.view(self.batch_size,-1).float(), data.actions.float()), dim=-1))
+        """
         data = self.replay_buffer.sample(self.batch_size)
         rewards=data.rewards.to(self.device)
+        
         with torch.no_grad():
             target_values = Target_Values(data.observations,self.actions_tensor,rewards,self.target_network,self.target_network,self.args.gamma)
-        # Old Q-values and loss calculation
 
         old_val = self.q_network(torch.cat((data.observations.float(), data.actions.float()), dim=-1))
-        print(f"old val {old_val.shape} target {target_values.shape}")
-
         loss = F.mse_loss(old_val, target_values) 
-
-        # Update Q-network
+        loss = torch.clamp(loss, min=-1, max=1)
+        
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
         
         if self.global_step % 100 == 0:
             self.writer.add_scalar("losses/td_loss", loss, self.global_step)
-
+            
     def update_target_network(self):
         self.target_network.load_state_dict(self.q_network.state_dict())
 
@@ -531,8 +555,8 @@ class Stoch_DQNAgent:
         self.target_network.load_state_dict(self.q_network.state_dict())
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=args.learning_rate)
         self.epsilons = epsilon_fun(self.args.total_timesteps)
-        self.buffer_size=int(2*np.log(len(self.actions_list)))
-        self.batch_size=int(np.log(len(self.actions_list)))
+        self.buffer_size=100_000#int(2*np.log(len(self.actions_list)))
+        self.batch_size=16#int(np.log(len(self.actions_list)))
         self.replay_buffer = ReplayBuffer(
             self.buffer_size,
             self.env.single_observation_space,
@@ -545,12 +569,13 @@ class Stoch_DQNAgent:
         self.sum_reward = np.zeros(self.args.num_envs)
 
     def select_action(self, obs):
-        if random.random() <self.epsilons[self.global_step] or self.global_step<self.buffer_size:
+        if random.random() <self.epsilons[self.global_step] or self.global_step<self.batch_size:
             return self.actions_list[np.random.choice(self.actions_list.shape[0],size=self.args.num_envs,replace=True)]
         
         else:
             data= self.replay_buffer.sample(self.batch_size)
             actions = data.actions.reshape(-1, data.actions.shape[-1])  # Shape: [num_action * n_env, action_dim]
+            
             obs_tensor = torch.tensor(obs, dtype=torch.float32).to(self.device)  # [n, obs_dim]
             expanded_obs = obs_tensor.unsqueeze(1).expand(-1,actions.shape[0], -1) #shape: [n,num_actions, obs_dim]
             expanded_obs = expanded_obs.reshape(-1, obs_tensor.shape[1])  # shape: [n * num_actions, obs_dim]
@@ -563,7 +588,7 @@ class Stoch_DQNAgent:
             return action
         
     def train(self):
-        obs, _ = self.env.reset(seed=self.args.seed)
+        obs, _ = self.env.reset()
         for self.global_step in range(self.args.total_timesteps):
             action = self.select_action(obs)
             next_obs, reward, terminated, truncated, _ = self.env.step(action)
@@ -594,11 +619,13 @@ class Stoch_DQNAgent:
     def update_q_network(self):
         data = self.replay_buffer.sample(self.batch_size)
         rewards=data.rewards.to(self.device)
+        
         with torch.no_grad():
             target_values = Target_Values(data.observations,data.actions,rewards,self.target_network,self.target_network,self.args.gamma)
                     
         old_val = self.q_network( torch.cat( (data.observations.float(),data.actions.float()),dim=-1 ) )
         loss = F.mse_loss(old_val, target_values)
+        loss = torch.clamp(loss, min=-1, max=1)
         
         self.optimizer.zero_grad()
         loss.backward()
@@ -627,8 +654,8 @@ class DDQNAgent:
         self.target_network.load_state_dict(self.q_network.state_dict())
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=args.learning_rate)
         self.epsilons = epsilon_fun(self.args.total_timesteps)
-        self.buffer_size=int(2*np.log(len(self.actions_list)))
-        self.batch_size=int(np.log(len(self.actions_list)))
+        self.buffer_size=100_000#int(2*np.log(len(self.actions_list)))
+        self.batch_size=16#int(np.log(len(self.actions_list)))
         self.replay_buffer = ReplayBuffer(
             self.buffer_size,
             self.env.single_observation_space,
@@ -659,7 +686,7 @@ class DDQNAgent:
         
         
     def train(self):
-        obs, _ = self.env.reset(seed=self.args.seed)
+        obs, _ = self.env.reset()
         for self.global_step in range(self.args.total_timesteps):
             action = self.select_action(obs)
             next_obs, reward, terminated, truncated, _ = self.env.step(action)
@@ -688,15 +715,17 @@ class DDQNAgent:
     def update_q_network(self):
         data = self.replay_buffer.sample(self.batch_size)
         rewards=data.rewards.to(self.device)
+        
         with torch.no_grad():
             target_values = Target_Values(data.observations,self.actions_tensor,rewards,self.target_network,self.q_network,self.args.gamma)
 
         old_val = self.q_network( torch.cat( (data.observations.float(),data.actions.float()),dim=-1 ) )
 
         loss = F.mse_loss(old_val,target_values)
+        loss = torch.clamp(loss, min=-1, max=1)
+        
         self.optimizer.zero_grad()
         loss.backward()
-
         self.optimizer.step()
 
         if self.global_step % 100 == 0:
@@ -791,6 +820,8 @@ class Stoch_DDQNAgent:
         old_val = self.q_network( torch.cat( (data.observations.float(),data.actions.float()),dim=-1 ) )
         
         loss = F.mse_loss(old_val,target_values)
+        #loss = torch.clamp(loss, min=-1, max=1)
+        
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
