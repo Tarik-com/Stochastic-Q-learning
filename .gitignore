@@ -11,3 +11,4 @@ DQN_run1.pkl
 *.txt
 Dicts 
 Experiments.ipynb
+wandb
