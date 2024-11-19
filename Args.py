@@ -27,14 +27,14 @@ class Args_:
     """the user or org name of the model repository from the Hugging Face Hub"""
 
     # Algorithm specific arguments
-    env_id: str ="InvertedPendulum-v4"#"FrozenLake-v1"#"CliffWalking-v0"##"CliffWalking-v0"#"HalfCheetah-v4"#"InvertedPendulum-v4"#"FrozenLake-v1"## # "InvertedPendulum-v4" # # # #"FrozenLake-v1" #
+    env_id: str ="Breakout-v4"#"HalfCheetah-v4"#"InvertedPendulum-v4"#"FrozenLake-v1"#"CliffWalking-v0"##"CliffWalking-v0"#"HalfCheetah-v4"#"InvertedPendulum-v4"#"FrozenLake-v1"## # "InvertedPendulum-v4" # # # #"FrozenLake-v1" #
     """the id of the environment"""
     i: int = None 
-    total_timesteps: int = 500_000 #6_250_000
+    total_timesteps: int =1_000_000#6_250_000 # 1_875_000 #
     """total timesteps of the experiments"""
     num_envs: int = 16
     """the number of parallel game environments"""
-    buffer_size: int = None
+    buffer_size: int = 100_000
     """the replay memory buffer size"""
     learning_rate: float = 0.001
     """the learning rate of the optimizer"""
@@ -50,12 +50,13 @@ class Args_:
     """the ending epsilon for exploration"""
     epsilon_decay_rate: float = 0.995
     """the epsilon decay rate"""
-    learning_starts: int = 50_000
+    learning_starts: int = int(50_000 /num_envs)
     """timestep to start learning"""
-    train_frequency: int = 5
+    train_frequency: int = 1
     """the frequency of training"""
-    target_network_frequency: int = 5_000 # cha,ged from 500 to 5_000
+    target_network_frequency: int = int(5_000/num_envs) # changed from 500 to 5_000
     """the timesteps it takes to update the target network"""
+    
     # for the stochastic learning
     
     C:int=2
@@ -71,6 +72,9 @@ class Args_:
             self.i = 512
         else:
             self.i=0
+            
+            
+            
             
  
 

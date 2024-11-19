@@ -5,6 +5,7 @@ import torch
 import torch.optim as optim
 import torch.nn.functional as F
 import importlib
+import wandb
 
 from collections import deque
 from stable_baselines3.common.buffers import ReplayBuffer
@@ -427,64 +428,97 @@ class DQNAgent:
     def __init__(self, args: Args):
         self.device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
         self.args = args
-        self.env = gym.make_vec(args.env_id,self.args.num_envs)
+        self.env = gym.make_vec(self.args.env_id,self.args.num_envs)
         self.actions_list=discretize_action_space(self.env,self.args.i)
-        #self.actions_list=[0,1,2]
         self.actions_tensor = torch.tensor(self.actions_list, dtype=torch.float32).to(self.device)
-        #self.actions_tensor = torch.tensor(self.actions_list, dtype=torch.int).reshape(-1,1).to(self.device)
         self.q_network = QNetwork(self.env).to(self.device)
         self.target_network = QNetwork(self.env).to(self.device)
         self.target_network.load_state_dict(self.q_network.state_dict())
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=args.learning_rate)
-        self.epsilons = epsilon_fun(self.args.total_timesteps)
-        self.buffer_size=100_000 #int(2*np.log(len(self.actions_list)))
-        self.batch_size=16#int(np.log(len(self.actions_list)))
+        self.epsilons = epsilon_fun()
+        self.buffer_size=self.args.buffer_size#100_000#int(2*np.log(len(self.actions_list)))
+        self.batch_size=16 #int(np.log(len(self.actions_list)))
         self.replay_buffer = ReplayBuffer(
             self.buffer_size,
             self.env.single_observation_space,
             self.env.single_action_space,
             self.device,
             handle_timeout_termination=False,)
-        self.writer = SummaryWriter(f"runs/{args.env_id}_{int(time.time())}")
+        
+        wandb.init(
+        project="Stochastic_QLearning_DQN",
+
+        config={"environment": self.args.env_id,
+                "num_env": self.args.num_envs,
+                "buffer size": self.buffer_size,
+                "batch size": self.batch_size,
+                "steps": self.args.total_timesteps,
+                "learning starts": self.args.learning_starts,
+                "learning frequency": self.args.train_frequency,
+                "target frequency": self.args.target_network_frequency
+                })
+                
+            
         
         self.average_rewards=[]
+        self.lengths=np.zeros(self.args.num_envs)
         self.sum_reward = np.zeros(self.args.num_envs)
+        #self.actions_frequency={ tuple( np.floor( (action*1000) / 1000) ): 0 for action in self.actions_list}
+        self.random_actions=[]
 
     def select_action(self, obs):
+        wandb.log({'epsilon': self.epsilons[self.global_step]})
+        
         if random.random() < self.epsilons[self.global_step]:
-            #return np.random.choice(self.actions_list,size=self.args.num_envs,replace=True)
-            return self.actions_list[np.random.choice(self.actions_list.shape[0],size=self.args.num_envs,replace=True)]
+            action_indices = np.random.choice(self.actions_list.shape[0], size=self.args.num_envs, replace=True)
+            action = self.actions_list[action_indices]
+            for i in range(self.args.num_envs):
+                wandb.log({"actions random": action_indices[i]})
+            return action
         
         else:
-            """
-            obs_tensor=obs_tensor.view(obs_tensor.size(0), -1)
-            action = self.actions_tensor[best_action_index].reshape(-1).cpu().numpy() # [n,action_dim]
-          """
+            if args.env_id=="Breakout-v4":
+                obs=obs.reshape(obs.shape[0],-1)
+                actions_tensor=self.actions_tensor.reshape(self.actions_tensor.shape[0],1)
+            else:
+                actions_tensor=self.actions_tensor
+                
             obs_tensor = torch.tensor(obs, dtype=torch.float32).to(self.device)  # [n, obs_dim]
-            expanded_obs = obs_tensor.unsqueeze(1).expand(-1,self.actions_tensor.shape[0], -1) #shape: [n,num_actions, obs_dim]
+            
+            expanded_obs = obs_tensor.unsqueeze(1).expand(-1,actions_tensor.shape[0], -1) #shape: [n,num_actions, obs_dim]
             expanded_obs = expanded_obs.reshape(-1, obs_tensor.shape[1])  # shape: [n * num_actions, obs_dim]
-            input_tensor = torch.cat((expanded_obs, self.actions_tensor.repeat(self.args.num_envs,1)), dim=-1) #shape: [n*num_actions, obs_dim + action_dim]
+            
+            input_tensor = torch.cat((expanded_obs, actions_tensor.repeat(self.args.num_envs,1)), dim=-1) #shape: [n*num_actions, obs_dim + action_dim]
             with torch.no_grad():
                 q_values = self.q_network(input_tensor) #shape [n*num_actions,1]
-            q_values = q_values.view(self.args.num_envs, self.actions_tensor.shape[0], -1) #shape [n,num_actions,1]
+            q_values = q_values.view(self.args.num_envs, actions_tensor.shape[0], -1) #shape [n,num_actions,1]
+            
             best_action_index = torch.argmax(q_values,dim=1).squeeze(1) # [n]
-            action = self.actions_tensor[best_action_index].cpu().numpy() # [n,action_dim]
+            
+            if args.env_id=="Breakout-v4":
+                action = actions_tensor[best_action_index].reshape(-1).cpu().numpy().astype(int) # [n,action_dim]
+            else:
+                action = actions_tensor[best_action_index].cpu().numpy() # [n,action_dim]
+            
+            for i in range(self.args.num_envs):
+                wandb.log({"actions selected": int(best_action_index[i].item())})
             return action 
             
     def train(self):
-        self.actions=[]
         obs, _ = self.env.reset()
         for self.global_step in range(self.args.total_timesteps):
             action = self.select_action(obs)
             next_obs, reward, terminated, truncated, _ = self.env.step(action)
             done = np.logical_or(terminated,truncated)
+            
             for i in range(self.args.num_envs):
                 self.replay_buffer.add(obs[i], next_obs[i], action[i], reward[i], done[i],_)
-                self.actions.append(action[i])
+                wandb.log({"actions": action[i]})
+                wandb.log({"instant reward": reward[i]})
+                
             obs = next_obs
-            self.sum_reward=self.sum_reward + reward
             
-            # Start learning after a certain number of steps
+            # LEARNING
             if self.global_step > self.args.learning_starts:
                 if self.global_step % self.args.train_frequency == 0:
                     self.update_q_network()
@@ -492,49 +526,44 @@ class DQNAgent:
                 # Update target network
                 if self.global_step % self.args.target_network_frequency == 0:
                     self.update_target_network()
-
+                    
+            self.sum_reward = self.sum_reward + reward
+            self.lengths = self.lengths + np.ones(self.args.num_envs)
+            
             if done.any():
                 for i in range(self.args.num_envs): 
                     if done[i]:
-                        self.average_rewards.append(self.sum_reward[i])
+                        wandb.log({"reward_per_episode": self.sum_reward[i] })
+                        wandb.log({"episode_length": self.lengths[i]})
+                    
+                        self.lengths[i]=0
                         self.sum_reward[i] = 0 
-        # showing q-value of each action
-        q_values_list=[]
-        for i in range(5):
-            obs,_=self.env.reset()
-            action = self.select_action(obs)
-            #
-            obs_tensor = torch.tensor(obs, dtype=torch.float32).to(self.device)  # [n, obs_dim]
-            expanded_obs = obs_tensor.unsqueeze(1).expand(-1,self.actions_tensor.shape[0], -1) #shape: [n,num_actions, obs_dim]
-            expanded_obs = expanded_obs.reshape(-1, obs_tensor.shape[1])  # shape: [n * num_actions, obs_dim]
-            input_tensor = torch.cat((expanded_obs, self.actions_tensor.repeat(self.args.num_envs,1)), dim=-1) #shape: [n*num_actions, obs_dim + action_dim]
-            with torch.no_grad():
-                q_values = self.q_network(input_tensor) #shape [n*num_actions,1]
-            q_values = q_values.view(self.args.num_envs, self.actions_tensor.shape[0], -1) #shape [n,num_actions,1]
-            q_values_list.append(q_values)
-        return self.average_rewards,self.actions, q_values_list
+      
     
     def update_q_network(self):
-        """
-        target_values = Target_Values(data.observations.view(self.batch_size,-1),self.actions_tensor,rewards,self.target_network,self.target_network,self.args.gamma)
-        old_val = self.q_network(torch.cat((data.observations.view(self.batch_size,-1).float(), data.actions.float()), dim=-1))
-        """
         data = self.replay_buffer.sample(self.batch_size)
         rewards=data.rewards.to(self.device)
         
+        if args.env_id=="Breakout-v4":
+            observations=data.observations.reshape(data.observations.shape[0],-1)
+            actions=self.actions_tensor.reshape(self.actions_tensor.shape[0],1) 
+        else:
+            observations=data.observations
+            actions=self.actions_tensor
+            
         with torch.no_grad():
-            target_values = Target_Values(data.observations,self.actions_tensor,rewards,self.target_network,self.target_network,self.args.gamma)
-
-        old_val = self.q_network(torch.cat((data.observations.float(), data.actions.float()), dim=-1))
+            target_values = Target_Values(observations,actions,rewards,self.target_network,self.target_network,self.args.gamma)
+        
+        old_val = self.q_network(torch.cat((observations.float(), data.actions.float()), dim=-1))
         loss = F.mse_loss(old_val, target_values) 
+        wandb.log({'loss':loss})
         loss = torch.clamp(loss, min=-1, max=1)
         
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
         
-        if self.global_step % 100 == 0:
-            self.writer.add_scalar("losses/td_loss", loss, self.global_step)
+        wandb.log({'clipped loss':loss})
             
     def update_target_network(self):
         self.target_network.load_state_dict(self.q_network.state_dict())

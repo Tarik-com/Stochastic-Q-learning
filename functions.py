@@ -129,19 +129,26 @@ def one_plot_1(data:list,names:list,window_size=100,y_name="Rewards",x_name="Ste
 
 
 def discretize_action_space(env,i):
-    d=env.action_space.shape[1]
-    low_bound=env.action_space.low[0][0]
-    high_bound=env.action_space.high[0][0]
-    a=np.linspace(low_bound,high_bound,i)
+    if args.env_id=="Breakout-v4":
+        n=env.single_action_space.n
+        return np.linspace(0, n-1,n,dtype=int)
+    else:
+        d=env.action_space.shape[1]
+        low_bound=env.action_space.low[0][0]
+        high_bound=env.action_space.high[0][0]
+        a=np.linspace(low_bound,high_bound,i)
 
-    return np.array(list(itertools.product(a,repeat=d)))
+        return np.array(list(itertools.product(a,repeat=d)))
 
-def epsilon_fun(n_episodes):
-    epsilon_array = np.zeros((n_episodes))
-    for i in range(n_episodes):
-        epsilon = args.min_epsilon + (args.max_epsilon-args.min_epsilon)*np.exp(-args.epsilon_decay_rate*i)
-        epsilon_array[i] = epsilon
-    return epsilon_array
+def epsilon_fun():
+    
+    epsilon = args.max_epsilon
+    epsilon_list=[]
+    # Calculate epsilon for each step
+    for step in range(args.total_timesteps):
+        epsilon_list.append(epsilon)
+        epsilon = max(epsilon * args.epsilon_decay_rate, args.min_epsilon) 
+    return epsilon_list
 
 def Target_Values(observations,actions,rewards,target_network,q_network,gamma):
         """
