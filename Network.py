@@ -6,7 +6,7 @@ args=Args_()
 class QNetwork(nn.Module):
     def __init__(self, env):
         super().__init__()
-        if args.env_id=="Breakout-v4":
+        if args.env_id=="Breakout-v4" or args.env_id == "Acrobot-v1":
             self.network = nn.Sequential(
                     nn.Linear(np.prod(env.single_observation_space.shape)+1, 64),
                     nn.ReLU(),

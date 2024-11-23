@@ -129,7 +129,7 @@ def one_plot_1(data:list,names:list,window_size=100,y_name="Rewards",x_name="Ste
 
 
 def discretize_action_space(env,i):
-    if args.env_id=="Breakout-v4":
+    if args.env_id=="Breakout-v4" or args.env_id == "Acrobot-v1":
         n=env.single_action_space.n
         return np.linspace(0, n-1,n,dtype=int)
     else:
@@ -150,9 +150,10 @@ def epsilon_fun():
         epsilon = max(epsilon * args.epsilon_decay_rate, args.min_epsilon) 
     return epsilon_list
 
-def Target_Values(observations,actions,rewards,target_network,q_network,gamma):
+def Target_Values(observations,next_obs,actions,rewards,target_network,q_network,gamma):
         """
         The size of observations needs to be [batch,obs_dim]
+        The size of next_obs needs to be [batch,obs_dim]
         The size of actions needs to be [num_actions, action_dim]
         Actions is a torch.Tensor
         Observations is torch.Tensor
@@ -169,7 +170,7 @@ def Target_Values(observations,actions,rewards,target_network,q_network,gamma):
         best_indices = torch.argmax(q_values, dim=1)  # [batch]
         
         best_action_q_values = q_values[torch.arange(q_values.size(0)), best_indices]  # [batch]
-        target_values = rewards + gamma * q_network(torch.cat((observations.float(),actions[best_indices]),dim=-1))
+        target_values = rewards + gamma * q_network(torch.cat((next_obs.float(),actions[best_indices]),dim=-1))
         return target_values
         
     
