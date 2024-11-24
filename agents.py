@@ -425,15 +425,20 @@ class Stoch_SARSAAgent:
  
 # DQN Agent
 class DQNAgent:
-    def __init__(self, args: Args):
+    def __init__(self, args: Args, stoch=False, double=False):
         self.device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
         self.args = args
+        self.stoch = stoch
+        self.double = double
         self.env = gym.make_vec(self.args.env_id,self.args.num_envs)
+        
         self.actions_list=discretize_action_space(self.env,self.args.i)
         self.actions_tensor = torch.tensor(self.actions_list, dtype=torch.float32).to(self.device)
+        
         self.q_network = QNetwork(self.env).to(self.device)
         self.target_network = QNetwork(self.env).to(self.device)
         self.target_network.load_state_dict(self.q_network.state_dict())
+        
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=args.learning_rate)
         self.epsilons = epsilon_fun()
         self.log2_actions = round(np.log2(len(self.actions_list)))
@@ -464,51 +469,66 @@ class DQNAgent:
         self.average_rewards=[]
         self.lengths=np.zeros(self.args.num_envs)
         self.sum_reward = np.zeros(self.args.num_envs)
-        #self.actions_frequency={ tuple( np.floor( (action*1000) / 1000) ): 0 for action in self.actions_list}
         self.random_actions=[]
 
-    def select_action(self, obs):
+    def select_action(self, obs, Random_actions):
         wandb.log({'epsilon': self.epsilons[self.global_step]})
         
-        if random.random() < self.epsilons[self.global_step] or self.global_step < self.buffer_size:
+        if random.random() < self.epsilons[self.global_step] or self.global_step < self.batch_size:
             action_indices = np.random.choice(self.actions_list.shape[0], size=self.args.num_envs, replace=True)
             action = self.actions_list[action_indices]
+            
             for i in range(self.args.num_envs):
                 wandb.log({"actions random": action_indices[i]})
-            return action
-        
-        else:
-            if args.env_id=="Breakout-v4" or args.env_id == "Acrobot-v1":
-                obs=obs.reshape(obs.shape[0],-1)
-                actions_tensor=self.actions_tensor.reshape(self.actions_tensor.shape[0],1)
-            else:
-                actions_tensor=self.actions_tensor
                 
-            obs_tensor = torch.tensor(obs, dtype=torch.float32).to(self.device)  # [n, obs_dim]
+            return action
+    
+        else:
             
-            expanded_obs = obs_tensor.unsqueeze(1).expand(-1,actions_tensor.shape[0], -1) #shape: [n,num_actions, obs_dim]
-            expanded_obs = expanded_obs.reshape(-1, obs_tensor.shape[1])  # shape: [n * num_actions, obs_dim]
+            if self.stoch:
+                if args.env_id=="Breakout-v4" or args.env_id == "Acrobot-v1":
+                    obs=obs.reshape(obs.shape[0],-1)
+                
+                obs_tensor = torch.tensor(obs, dtype=torch.float32).to(self.device)
+                
+                #sample batch_size elements from replay buffer
+                data= self.replay_buffer.sample(self.batch_size)
+                
+                actions_set = np.concatenate((data.actions, Random_actions), axis=0)
+                actions_set = torch.tensor(actions_set,dtype=torch.float)
             
-            input_tensor = torch.cat((expanded_obs, actions_tensor.repeat(self.args.num_envs,1)), dim=-1) #shape: [n*num_actions, obs_dim + action_dim]
-            with torch.no_grad():
-                q_values = self.q_network(input_tensor) #shape [n*num_actions,1]
-            q_values = q_values.view(self.args.num_envs, actions_tensor.shape[0], -1) #shape [n,num_actions,1]
-            
-            best_action_index = torch.argmax(q_values,dim=1).squeeze(1) # [n]
-            
-            if args.env_id=="Breakout-v4" or args.env_id == "Acrobot-v1":
-                action = actions_tensor[best_action_index].reshape(-1).cpu().numpy().astype(int) # [n,action_dim]
+                action=max_action(obs_tensor,actions_set,self.q_network)
+                
             else:
-                action = actions_tensor[best_action_index].cpu().numpy() # [n,action_dim]
-            
+                
+                if args.env_id=="Breakout-v4" or args.env_id == "Acrobot-v1":
+                    obs=obs.reshape(obs.shape[0],-1)
+                    actions_tensor=self.actions_tensor.reshape(self.actions_tensor.shape[0],1)
+                else:
+                    actions_tensor=self.actions_tensor
+                    
+                obs_tensor = torch.tensor(obs, dtype=torch.float32).to(self.device)
+                
+                action=max_action(obs_tensor,actions_tensor,self.q_network)
+                
+           
             for i in range(self.args.num_envs):
-                wandb.log({"actions selected": int(best_action_index[i].item())})
+                wandb.log({"actions selected": action[i]})
+                
             return action
             
     def train(self):
         obs, _ = self.env.reset()
         for self.global_step in range(self.args.total_timesteps):
-            action = self.select_action(obs)
+            
+            if self.stoch:
+                random_action_indices = np.random.choice(self.actions_list.shape[0], size=self.log2_actions, replace=False)
+                random_actions = self.actions_list[random_action_indices]
+                
+            else:
+                random_actions = None
+                
+            action = self.select_action(obs,random_actions)
             next_obs, reward, terminated, truncated, _ = self.env.step(action)
             done = np.logical_or(terminated,truncated)
             
@@ -544,24 +564,40 @@ class DQNAgent:
         data = self.replay_buffer.sample(self.batch_size)
         rewards=data.rewards.to(self.device)
         
-        if args.env_id=="Breakout-v4" or args.env_id == "Acrobot-v1":
-            observations=data.observations.reshape(data.observations.shape[0],-1)
-            actions=self.actions_tensor.reshape(self.actions_tensor.shape[0],1) 
-            next_obs=data.next_observations.reshape(data.next_observations.shape[0],-1)
+        if self.stoch:
+            with torch.no_grad():
+                if args.env_id=="Breakout-v4" or args.env_id == "Acrobot-v1":
+                    if self.double:
+                        target_values = Target_Values(data.next_observations.reshape(data.next_observations.shape[0],-1), data.actions,rewards,self.target_network,self.q_network,self.args.gamma)
+                    else:
+                        target_values = Target_Values(data.next_observations.reshape(data.next_observations.shape[0],-1), data.actions,rewards,self.target_network,self.target_network,self.args.gamma)
+
+                else:
+                    if self.double:
+                        target_values = Target_Values(data.next_observations, data.actions,rewards,self.target_network,self.q_network,self.args.gamma)
+                    else:
+                        target_values = Target_Values(data.next_observations, data.actions,rewards,self.target_network,self.target_network,self.args.gamma)
+                     
         else:
-            observations=data.observations
-            actions=self.actions_tensor
-            next_obs=data.next_observations
-            
-        with torch.no_grad():
-            target_values = Target_Values(observations,next_obs,actions,rewards,self.target_network,self.target_network,self.args.gamma)
+            with torch.no_grad():
+                if args.env_id=="Breakout-v4" or args.env_id == "Acrobot-v1":
+                    if self.double:
+                        target_values = Target_Values(data.next_observations.reshape(data.next_observations.shape[0],-1), self.actions_tensor.reshape(self.actions_tensor.shape[0],1) ,rewards,self.target_network,self.q_network,self.args.gamma)
+                    else:
+                        target_values = Target_Values(data.next_observations.reshape(data.next_observations.shape[0],-1), self.actions_tensor.reshape(self.actions_tensor.shape[0],1) ,rewards,self.target_network,self.target_network,self.args.gamma)
+
+                else:
+                    if self.double: 
+                        target_values = Target_Values(data.next_observations, self.actions_tensor,rewards,self.target_network,self.q_network,self.args.gamma)
+                    else:
+                        target_values = Target_Values(data.next_observations, self.actions_tensor,rewards,self.target_network,self.target_network,self.args.gamma)
         
-        old_val = self.q_network(torch.cat((observations.float(), data.actions.float()), dim=-1))
+        old_val = self.q_network(torch.cat((data.observations.float(), data.actions.float()), dim=-1))
         
         for i in range(len(target_values)):
             wandb.log({'predicted values': old_val[i]})
             wandb.log({'target values': target_values[i]})
-            
+        
         loss = F.mse_loss(old_val, target_values) 
         wandb.log({'loss':loss})
         loss = torch.clamp(loss, min=-1, max=1)
@@ -573,361 +609,27 @@ class DQNAgent:
         wandb.log({'clipped loss':loss})
             
     def update_target_network(self):
-        self.target_network.load_state_dict(self.q_network.state_dict())
+        #self.target_network.load_state_dict(self.q_network.state_dict())
+        
+        tau = 0.01  # Mixing coefficient: 0.0 -> all target, 1.0 -> all q_network
+
+        # Get state dictionaries for both networks
+        q_state_dict = self.q_network.state_dict()
+        target_state_dict = self.target_network.state_dict()
+
+        # Blend the parameters
+        for name in target_state_dict.keys():
+            target_state_dict[name] = (
+                tau * q_state_dict[name] + (1 - tau) * target_state_dict[name]
+                )
+        # Load the mixed parameters back into the target network
+        self.target_network.load_state_dict(target_state_dict)
 
     def close(self):
         self.env.close()
-        self.writer.close()
-
-# Stochastic DQN Agent
-class Stoch_DQNAgent:
-    def __init__(self, args: Args):
-        self.args = args
-        self.device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
-        self.env = gym.make_vec(args.env_id,self.args.num_envs)
-        self.actions_list=discretize_action_space(self.env,self.args.i)
-        self.q_network = QNetwork(self.env).to(self.device)
-        self.target_network = QNetwork(self.env).to(self.device)
-        self.target_network.load_state_dict(self.q_network.state_dict())
-        self.optimizer = optim.Adam(self.q_network.parameters(), lr=args.learning_rate)
-        self.epsilons = epsilon_fun(self.args.total_timesteps)
-        self.buffer_size=100_000#int(2*np.log(len(self.actions_list)))
-        self.batch_size=16#int(np.log(len(self.actions_list)))
-        self.replay_buffer = ReplayBuffer(
-            self.buffer_size,
-            self.env.single_observation_space,
-            self.env.single_action_space,
-            self.device,
-            handle_timeout_termination=False)
-        self.writer = SummaryWriter(f"runs/{args.env_id}_{int(time.time())}")
         
-        self.average_rewards=[]
-        self.sum_reward = np.zeros(self.args.num_envs)
-
-    def select_action(self, obs):
-        if random.random() <self.epsilons[self.global_step] or self.global_step<self.batch_size:
-            return self.actions_list[np.random.choice(self.actions_list.shape[0],size=self.args.num_envs,replace=True)]
-        
-        else:
-            data= self.replay_buffer.sample(self.batch_size)
-            actions = data.actions.reshape(-1, data.actions.shape[-1])  # Shape: [num_action * n_env, action_dim]
-            
-            obs_tensor = torch.tensor(obs, dtype=torch.float32).to(self.device)  # [n, obs_dim]
-            expanded_obs = obs_tensor.unsqueeze(1).expand(-1,actions.shape[0], -1) #shape: [n,num_actions, obs_dim]
-            expanded_obs = expanded_obs.reshape(-1, obs_tensor.shape[1])  # shape: [n * num_actions, obs_dim]
-            input_tensor = torch.cat((expanded_obs, actions.repeat(self.args.num_envs,1)), dim=-1) #shape: [n*num_actions, obs_dim + action_dim]
-            with torch.no_grad():
-                q_values = self.q_network(input_tensor) #shape [n*num_actions,1]
-            q_values = q_values.view(self.args.num_envs, actions.shape[0], -1) #shape [n,num_actions,1]
-            best_action_index = torch.argmax(q_values,dim=1).squeeze(1) # [n]
-            action = actions[best_action_index].cpu().numpy() # [n,action_dim]
-            return action
-        
-    def train(self):
-        obs, _ = self.env.reset()
-        for self.global_step in range(self.args.total_timesteps):
-            action = self.select_action(obs)
-            next_obs, reward, terminated, truncated, _ = self.env.step(action)
-            done = np.logical_or(terminated,truncated)
-            for i in range(self.args.num_envs):
-                self.replay_buffer.add(obs[i], next_obs[i], action[i], reward[i], done[i],_)
-            
-            obs = next_obs
-            self.sum_reward=self.sum_reward + reward
-
-            # Start learning after a certain number of steps
-            if self.global_step > self.args.learning_starts:
-                if self.global_step % self.args.train_frequency == 0:
-                    self.update_q_network()
-
-                # Update target network
-                if self.global_step % self.args.target_network_frequency == 0:
-                    self.update_target_network()
-
-            if done.any():
-                for i in range(self.args.num_envs): 
-                    if done[i]:
-                        self.average_rewards.append(self.sum_reward[i])
-                        self.sum_reward[i] = 0  
-
-        return self.average_rewards
-
-    def update_q_network(self):
-        data = self.replay_buffer.sample(self.batch_size)
-        rewards=data.rewards.to(self.device)
-        
-        with torch.no_grad():
-            target_values = Target_Values(data.observations,data.actions,rewards,self.target_network,self.target_network,self.args.gamma)
-                    
-        old_val = self.q_network( torch.cat( (data.observations.float(),data.actions.float()),dim=-1 ) )
-        loss = F.mse_loss(old_val, target_values)
-        loss = torch.clamp(loss, min=-1, max=1)
-        
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-
-        if self.global_step % 100 == 0:
-            self.writer.add_scalar("losses/td_loss", loss, self.global_step)
-
-    def update_target_network(self):
-        self.target_network.load_state_dict(self.q_network.state_dict())
-
-    def close(self):
-        self.env.close()
-        self.writer.close()
-
-# DDQN Agent
-class DDQNAgent:
-    def __init__(self, args: Args):
-        self.device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
-        self.args = args
-        self.env = gym.make_vec(args.env_id,self.args.num_envs)
-        self.actions_list=discretize_action_space(self.env,self.args.i)
-        self.actions_tensor = torch.tensor(self.actions_list, dtype=torch.float32).to(self.device)
-        self.q_network = QNetwork(self.env).to(self.device)
-        self.target_network = QNetwork(self.env).to(self.device)
-        self.target_network.load_state_dict(self.q_network.state_dict())
-        self.optimizer = optim.Adam(self.q_network.parameters(), lr=args.learning_rate)
-        self.epsilons = epsilon_fun()
-        self.buffer_size=self.args.buffer_size#int(2*np.log(len(self.actions_list)))
-        self.batch_size=self.args.batch_size#int(np.log(len(self.actions_list)))
-        self.replay_buffer = ReplayBuffer(
-            self.buffer_size,
-            self.env.single_observation_space,
-            self.env.single_action_space,
-            self.device,
-            handle_timeout_termination=False,)
-        
-        wandb.init(
-        project="Stochastic_QLearning_DQN",
-
-        config={"environment": self.args.env_id,
-                "num_env": self.args.num_envs,
-                "buffer size": self.buffer_size,
-                "batch size": self.batch_size,
-                "steps": self.args.total_timesteps,
-                "learning starts": self.args.learning_starts,
-                "learning frequency": self.args.train_frequency,
-                "target frequency": self.args.target_network_frequency
-                })
-        self.average_rewards=[]
-        self.lengths=np.zeros(self.args.num_envs)
-        self.sum_reward = np.zeros(self.args.num_envs)
-        
-        self.random_actions=[]
-
-    def select_action(self, obs):
-        wandb.log({'epsilon': self.epsilons[self.global_step]})
-        
-        if random.random() < self.epsilons[self.global_step]:
-            action_indices = np.random.choice(self.actions_list.shape[0], size=self.args.num_envs, replace=True)
-            action = self.actions_list[action_indices]
-            for i in range(self.args.num_envs):
-                wandb.log({"actions random": action_indices[i]})
-            return action
-            
-        else:
-            if args.env_id=="Breakout-v4":
-                obs=obs.reshape(obs.shape[0],-1)
-                actions_tensor=self.actions_tensor.reshape(self.actions_tensor.shape[0],1)
-            else:
-                actions_tensor=self.actions_tensor
-                
-            obs_tensor = torch.tensor(obs, dtype=torch.float32).to(self.device)  # [n, obs_dim]
-            
-            expanded_obs = obs_tensor.unsqueeze(1).expand(-1,actions_tensor.shape[0], -1) #shape: [n,num_actions, obs_dim]
-            expanded_obs = expanded_obs.reshape(-1, obs_tensor.shape[1])  # shape: [n * num_actions, obs_dim]
-            
-            input_tensor = torch.cat((expanded_obs, actions_tensor.repeat(self.args.num_envs,1)), dim=-1) #shape: [n*num_actions, obs_dim + action_dim]
-            with torch.no_grad():
-                q_values = self.q_network(input_tensor) #shape [n*num_actions,1]
-            q_values = q_values.view(self.args.num_envs, actions_tensor.shape[0], -1) #shape [n,num_actions,1]
-            
-            best_action_index = torch.argmax(q_values,dim=1).squeeze(1) # [n]
-            
-            if args.env_id=="Breakout-v4":
-                action = actions_tensor[best_action_index].reshape(-1).cpu().numpy().astype(int) # [n,action_dim]
-            else:
-                action = actions_tensor[best_action_index].cpu().numpy() # [n,action_dim]
-            
-            for i in range(self.args.num_envs):
-                wandb.log({"actions selected": int(best_action_index[i].item())})
-            return action        
-        
-    def train(self):
-        obs, _ = self.env.reset()
-        for self.global_step in range(self.args.total_timesteps):
-            action = self.select_action(obs)
-            next_obs, reward, terminated, truncated, _ = self.env.step(action)
-            done = np.logical_or(terminated,truncated)
-            for i in range(self.args.num_envs):
-                self.replay_buffer.add(obs[i], next_obs[i], action[i], reward[i], done[i],_)
-                wandb.log({"actions": action[i]})
-                wandb.log({"instant reward": reward[i]})
-                
-            obs = next_obs
-            
-            # Start learning after a certain number of steps
-            if self.global_step > self.args.learning_starts:
-                if self.global_step % self.args.train_frequency == 0:
-                    self.update_q_network()
-
-                # Update target network
-                if self.global_step % self.args.target_network_frequency == 0:
-                    self.update_target_network()
-                    
-            self.sum_reward = self.sum_reward + reward
-            self.lengths = self.lengths + np.ones(self.args.num_envs)
-
-            if done.any():
-                for i in range(self.args.num_envs): 
-                    if done[i]:
-                        wandb.log({"reward_per_episode": self.sum_reward[i] })
-                        wandb.log({"episode_length": self.lengths[i]})
-                    
-                        self.lengths[i] = 0
-                        self.sum_reward[i] = 0 
-                  
-
-    def update_q_network(self):
-        data = self.replay_buffer.sample(self.batch_size)
-        rewards=data.rewards.to(self.device)
-        if args.env_id=="Breakout-v4":
-            observations=data.observations.reshape(data.observations.shape[0],-1)
-            actions=self.actions_tensor.reshape(self.actions_tensor.shape[0],1) 
-        else:
-            observations=data.observations
-            actions=self.actions_tensor
-            
-        with torch.no_grad():
-            target_values = Target_Values(observations,actions,rewards,self.target_network,self.q_network,self.args.gamma)
-            
-
-        old_val = self.q_network( torch.cat( (observations.float(),data.actions.float()),dim=-1 ) )
-        for i in range(len(target_values)):
-            wandb.log({'predicted values': old_val[i]})
-            wandb.log({'target values': target_values[i]})
-            
-        loss = F.smooth_l1_loss(old_val,target_values)
-        #loss = F.mse_loss(old_val,target_values)
-        wandb.log({'loss':loss})
-        loss = torch.clamp(loss, min=-1, max=1)
-        
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-        wandb.log({'clipped loss':loss})
-
-
-    def update_target_network(self):
-        self.target_network.load_state_dict(self.q_network.state_dict())
-
-    def close(self):
-        self.env.close()
-        self.writer.close()
-
-# Stoch DDQN Agent
-class Stoch_DDQNAgent:
-    def __init__(self, args: Args):
-        self.args = args
-        self.device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
-        self.env = gym.make_vec(args.env_id,self.args.num_envs)
-        self.actions_list=discretize_action_space(self.env,self.args.i)
-        self.q_network = QNetwork(self.env).to(self.device)
-        self.target_network = QNetwork(self.env).to(self.device)
-        self.target_network.load_state_dict(self.q_network.state_dict())
-        self.optimizer = optim.Adam(self.q_network.parameters(), lr=args.learning_rate)
-        self.epsilons = epsilon_fun(self.args.total_timesteps)
-        self.buffer_size=int(2*np.log(len(self.actions_list)))
-        self.batch_size=int(np.log(len(self.actions_list)))
-        self.replay_buffer = ReplayBuffer(
-            self.buffer_size,
-            self.env.single_observation_space,
-            self.env.single_action_space,
-            self.device,
-            handle_timeout_termination=False,
-        )
-        self.writer = SummaryWriter(f"runs/{args.env_id}_{int(time.time())}")
-        
-        self.average_rewards=[]
-        self.sum_reward = np.zeros(self.args.num_envs)
-
-    def select_action(self, obs):
-        if random.random() <self.epsilons[self.global_step] or self.global_step<self.buffer_size:
-            return self.actions_list[np.random.choice(self.actions_list.shape[0],size=self.args.num_envs,replace=True)]
-        
-        else:
-            data= self.replay_buffer.sample(self.batch_size)
-            actions = data.actions.reshape(-1, data.actions.shape[-1])  # Shape: [num_action * n_env, action_dim]
-            obs_tensor = torch.tensor(obs, dtype=torch.float32).to(self.device)  # [n, obs_dim]
-            expanded_obs = obs_tensor.unsqueeze(1).expand(-1,actions.shape[0], -1) #shape: [n,num_actions, obs_dim]
-            expanded_obs = expanded_obs.reshape(-1, obs_tensor.shape[1])  # shape: [n * num_actions, obs_dim]
-            input_tensor = torch.cat((expanded_obs, actions.repeat(self.args.num_envs,1)), dim=-1) #shape: [n*num_actions, obs_dim + action_dim]
-            with torch.no_grad():
-                q_values = self.q_network(input_tensor) #shape [n*num_actions,1]
-            q_values = q_values.view(self.args.num_envs, actions.shape[0], -1) #shape [n,num_actions,1]
-            best_action_index = torch.argmax(q_values,dim=1).squeeze(1) # [n]
-            action = actions[best_action_index].cpu().numpy() # [n,action_dim]
-            return action
         
 
-    def train(self):
-        obs, _ = self.env.reset(seed=self.args.seed)
-        for self.global_step in range(self.args.total_timesteps):
-            action = self.select_action(obs)
-            next_obs, reward, terminated, truncated, _ = self.env.step(action)
-            done = np.logical_or(terminated,truncated)
-            for i in range(self.args.num_envs):
-                self.replay_buffer.add(obs[i], next_obs[i], action[i], reward[i], done[i],_)
-            
-            obs = next_obs
-            self.sum_reward = self.sum_reward + reward
-
-            # Start learning after a certain number of steps
-            if self.global_step > self.args.learning_starts:
-                if self.global_step % self.args.train_frequency == 0:
-                    self.update_q_network()
-
-                # Update target network
-                if self.global_step % self.args.target_network_frequency == 0:
-                    self.update_target_network()
-
-            if done.any():
-                for i in range(self.args.num_envs): 
-                    if done[i]:
-                        self.average_rewards.append(self.sum_reward[i])
-                        self.sum_reward[i] = 0 
-        return self.average_rewards
-
-    def update_q_network(self):
-        data = self.replay_buffer.sample(self.batch_size)
-        rewards=data.rewards.to(self.device)
-        with torch.no_grad():
-            target_values = Target_Values(data.observations,data.actions,rewards,self.target_network,self.q_network,self.args.gamma)
-                    
-        old_val = self.q_network( torch.cat( (data.observations.float(),data.actions.float()),dim=-1 ) )
-        
-        loss = F.mse_loss(old_val,target_values)
-        #loss = torch.clamp(loss, min=-1, max=1)
-        
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-
-        if self.global_step % 100 == 0:
-            self.writer.add_scalar("losses/td_loss", loss, self.global_step)
-
-    def update_target_network(self):
-        self.target_network.load_state_dict(self.q_network.state_dict())
-
-    def close(self):
-        self.env.close()
-        self.writer.close()
-
-    
-
-    
     
     
     

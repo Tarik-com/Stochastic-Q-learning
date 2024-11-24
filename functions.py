@@ -150,27 +150,46 @@ def epsilon_fun():
         epsilon = max(epsilon * args.epsilon_decay_rate, args.min_epsilon) 
     return epsilon_list
 
-def Target_Values(observations,next_obs,actions,rewards,target_network,q_network,gamma):
+def max_action(obs_tensor ,actions_tensor,q_network):
+    expanded_obs = obs_tensor.unsqueeze(1).expand(-1,actions_tensor.shape[0], -1) #shape: [n,num_actions, obs_dim]
+    expanded_obs = expanded_obs.reshape(-1, obs_tensor.shape[1])  # shape: [n * num_actions, obs_dim]
+
+    actions_tensor = torch.tensor(actions_tensor)
+    input_tensor = torch.cat((expanded_obs, actions_tensor.repeat(args.num_envs,1)), dim=-1) #shape: [n*num_actions, obs_dim + action_dim]
+    
+    with torch.no_grad():
+        q_values = q_network(input_tensor) #shape [n*num_actions,1]
+    q_values = q_values.view(args.num_envs, actions_tensor.shape[0], -1) #shape [n,num_actions,1]
+    
+    best_action_index = torch.argmax(q_values,dim=1).squeeze(1) # [n]
+    
+    if args.env_id=="Breakout-v4" or args.env_id == "Acrobot-v1":
+        action = actions_tensor[best_action_index].reshape(-1).cpu().numpy().astype(int) # [n,action_dim]
+    else:
+        action = actions_tensor[best_action_index].cpu().numpy() # [n,action_dim]
+    return action
+
+
+def Target_Values(next_obs,actions,rewards,target_network,q_network,gamma):
         """
-        The size of observations needs to be [batch,obs_dim]
         The size of next_obs needs to be [batch,obs_dim]
         The size of actions needs to be [num_actions, action_dim]
         Actions is a torch.Tensor
         Observations is torch.Tensor
         """
-        expanded_obs = observations.float().unsqueeze(1).expand(-1, actions.shape[0], -1)  # [batch, num_actions, obs_dim]
-        expanded_actions = actions.unsqueeze(0).expand(observations.shape[0], -1, -1)  # [batch, num_actions, action_dim]
+        expanded_obs = next_obs.float().unsqueeze(1).expand(-1, actions.shape[0], -1)  # [batch, num_actions, obs_dim]
+        expanded_actions = actions.unsqueeze(0).expand(next_obs.shape[0], -1, -1)  # [batch, num_actions, action_dim]
         # Combine observations and actions
         obs_actions_combined = torch.cat((expanded_obs, expanded_actions), dim=-1)  # [batch, num_actions, obs_dim + action_dim]
         obs_actions_flattened = obs_actions_combined.view(-1, obs_actions_combined.shape[-1])  # [batch * num_actions, obs_dim + action_dim]
         # Get Q-values
         q_values = target_network(obs_actions_flattened)  # [batch * num_actions, 1]
-        q_values = q_values.view(observations.shape[0], actions.shape[0])  # [batch, num_actions]
+        q_values = q_values.view(next_obs.shape[0], actions.shape[0])  # [batch, num_actions]
         # Identify best actions
         best_indices = torch.argmax(q_values, dim=1)  # [batch]
         
-        best_action_q_values = q_values[torch.arange(q_values.size(0)), best_indices]  # [batch]
-        target_values = rewards + gamma * q_network(torch.cat((next_obs.float(),actions[best_indices]),dim=-1))
+        #best_action_q_values = q_values[torch.arange(q_values.size(0)), best_indices]  # [batch]
+        target_values = rewards + gamma * q_network(torch.cat((next_obs.float(),actions[best_indices]),dim=-1)) # [batch , 1]
         return target_values
         
     

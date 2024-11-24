@@ -20,4 +20,8 @@ the data from another
 # question about the stoch dqn target value.
 when we sample from the buffer and evaluate the target value for the sampled obs, 
 do we evaluate those based on the actions sampled from the same sample or do we sample new actions?
+
+# discretizing the action space
+should i first discretize tha action space and then after use the env wwith those discretized actions 
+or should i use the env with continious actions and then discretiz those actions
 """

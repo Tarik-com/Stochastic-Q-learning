@@ -27,10 +27,10 @@ class Args_:
     """the user or org name of the model repository from the Hugging Face Hub"""
 
     # Algorithm specific arguments
-    env_id: str ="Breakout-v4"#"HalfCheetah-v4"#"InvertedPendulum-v4"#"FrozenLake-v1"#"CliffWalking-v0"##"CliffWalking-v0"#"HalfCheetah-v4"#"InvertedPendulum-v4"#"FrozenLake-v1"## # "InvertedPendulum-v4" # # # #"FrozenLake-v1" #
+    env_id: str ="InvertedPendulum-v4"#"Acrobot-v1"#"MountainCarContinuous-v0"#"Breakout-v4"#"HalfCheetah-v4"#"InvertedPendulum-v4"#"FrozenLake-v1"#"CliffWalking-v0"##"CliffWalking-v0"#"HalfCheetah-v4"#"InvertedPendulum-v4"#"FrozenLake-v1"## # "InvertedPendulum-v4" # # # #"FrozenLake-v1" #
     """the id of the environment"""
     i: int = None 
-    total_timesteps: int =1_000_000#6_250_000 # 1_875_000 #
+    total_timesteps: int =1_875_000#6_250_000 # 1_875_000 #
     """total timesteps of the experiments"""
     num_envs: int = 16
     """the number of parallel game environments"""
@@ -38,11 +38,11 @@ class Args_:
     """the replay memory buffer size"""
     learning_rate: float = 0.001
     """the learning rate of the optimizer"""
-    gamma: float = 0.99
+    gamma: float = 0.95
     """the discount factor gamma"""
     tau: float = 1.0
     """the target network update rate"""
-    batch_size: int = 128
+    batch_size: int = 64
     """the batch size of sample from the reply memory"""
     max_epsilon: float = 1
     """the starting epsilon for exploration"""
@@ -54,7 +54,7 @@ class Args_:
     """timestep to start learning"""
     train_frequency: int = 1
     """the frequency of training"""
-    target_network_frequency: int = int(5_000/num_envs) # changed from 500 to 5_000
+    target_network_frequency: int = int(5_000/num_envs) 
     """the timesteps it takes to update the target network"""
     
     # for the stochastic learning
@@ -69,6 +69,8 @@ class Args_:
         if self.env_id == "HalfCheetah-v4":
             self.i = 4
         elif self.env_id == "InvertedPendulum-v4":
+            self.i = 512
+        elif self.env_id == "MountainCarContinuous-v0":
             self.i = 512
         else:
             self.i=0

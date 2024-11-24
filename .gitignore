@@ -12,3 +12,7 @@ DQN_run1.pkl
 Dicts 
 Experiments.ipynb
 wandb
+paper_code.py
+Spam.py
+Questions.py
+.bash_logout
