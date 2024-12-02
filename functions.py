@@ -129,7 +129,7 @@ def one_plot_1(data:list,names:list,window_size=100,y_name="Rewards",x_name="Ste
 
 
 def discretize_action_space(env,i):
-    if args.env_id=="Breakout-v4" or args.env_id == "Acrobot-v1":
+    if args.env_id=="Breakout-v4" or args.env_id == "Acrobot-v1" or args.env_id=="LunarLander-v2":
         n=env.single_action_space.n
         return np.linspace(0, n-1,n,dtype=int)
     else:
@@ -141,13 +141,15 @@ def discretize_action_space(env,i):
         return np.array(list(itertools.product(a,repeat=d)))
 
 def epsilon_fun():
-    
-    epsilon = args.max_epsilon
     epsilon_list=[]
     # Calculate epsilon for each step
     for step in range(args.total_timesteps):
-        epsilon_list.append(epsilon)
-        epsilon = max(epsilon * args.epsilon_decay_rate, args.min_epsilon) 
+        if step < args.learning_starts:
+            epsilon = 1
+            epsilon_list.append(epsilon)
+        else:
+            epsilon = max(epsilon * args.epsilon_decay_rate, args.min_epsilon) 
+            epsilon_list.append(epsilon)
     return epsilon_list
 
 def max_action(obs_tensor ,actions_tensor,q_network):
@@ -156,21 +158,20 @@ def max_action(obs_tensor ,actions_tensor,q_network):
 
     actions_tensor = torch.tensor(actions_tensor)
     input_tensor = torch.cat((expanded_obs, actions_tensor.repeat(args.num_envs,1)), dim=-1) #shape: [n*num_actions, obs_dim + action_dim]
-    
     with torch.no_grad():
         q_values = q_network(input_tensor) #shape [n*num_actions,1]
     q_values = q_values.view(args.num_envs, actions_tensor.shape[0], -1) #shape [n,num_actions,1]
     
     best_action_index = torch.argmax(q_values,dim=1).squeeze(1) # [n]
     
-    if args.env_id=="Breakout-v4" or args.env_id == "Acrobot-v1":
+    if args.env_id=="Breakout-v4" or args.env_id == "Acrobot-v1" or args.env_id == "LunarLander-v2":
         action = actions_tensor[best_action_index].reshape(-1).cpu().numpy().astype(int) # [n,action_dim]
     else:
         action = actions_tensor[best_action_index].cpu().numpy() # [n,action_dim]
-    return action
+    return action,best_action_index
 
 
-def Target_Values(next_obs,actions,rewards,target_network,q_network,gamma):
+def Target_Values(next_obs,actions,rewards,dones,target_network,q_network,gamma):
         """
         The size of next_obs needs to be [batch,obs_dim]
         The size of actions needs to be [num_actions, action_dim]
@@ -183,13 +184,12 @@ def Target_Values(next_obs,actions,rewards,target_network,q_network,gamma):
         obs_actions_combined = torch.cat((expanded_obs, expanded_actions), dim=-1)  # [batch, num_actions, obs_dim + action_dim]
         obs_actions_flattened = obs_actions_combined.view(-1, obs_actions_combined.shape[-1])  # [batch * num_actions, obs_dim + action_dim]
         # Get Q-values
-        q_values = target_network(obs_actions_flattened)  # [batch * num_actions, 1]
+        q_values = q_network(obs_actions_flattened)  # [batch * num_actions, 1]
         q_values = q_values.view(next_obs.shape[0], actions.shape[0])  # [batch, num_actions]
         # Identify best actions
         best_indices = torch.argmax(q_values, dim=1)  # [batch]
-        
         #best_action_q_values = q_values[torch.arange(q_values.size(0)), best_indices]  # [batch]
-        target_values = rewards + gamma * q_network(torch.cat((next_obs.float(),actions[best_indices]),dim=-1)) # [batch , 1]
+        target_values = rewards + gamma * ( 1 - dones ) * target_network(torch.cat((next_obs.float(),actions[best_indices]),dim=-1)) # [batch , 1]
         return target_values
         
     

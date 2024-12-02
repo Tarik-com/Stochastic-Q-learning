@@ -9,7 +9,7 @@ import wandb
 
 from collections import deque
 from stable_baselines3.common.buffers import ReplayBuffer
-from torch.utils.tensorboard import SummaryWriter
+#from torch.utils.tensorboard import SummaryWriter
 import Network
 import Args
 importlib.reload(Network)
@@ -441,17 +441,17 @@ class DQNAgent:
         
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=args.learning_rate)
         self.epsilons = epsilon_fun()
-        self.log2_actions = round(np.log2(len(self.actions_list)))
+        
+        self.log2_actions = round(np.log2(len(self.actions_list))) 
         self.batch_size = 2 * self.log2_actions
         self.buffer_size = 2 * self.batch_size
-        #self.buffer_size=self.args.buffer_size#100_000#int(2*np.log(len(self.actions_list)))
-        #self.batch_size=self.args.batch_size #int(np.log(len(self.actions_list)))
+        
         self.replay_buffer = ReplayBuffer(
             self.buffer_size,
             self.env.single_observation_space,
             self.env.single_action_space,
             self.device,
-            handle_timeout_termination=False,)
+            handle_timeout_termination=False)
         
         wandb.init(
         project="Stochastic_QLearning_DQN",
@@ -466,42 +466,41 @@ class DQNAgent:
                 "target frequency": self.args.target_network_frequency
                 })
                 
-        self.average_rewards=[]
+        #self.average_rewards=[]
         self.lengths=np.zeros(self.args.num_envs)
         self.sum_reward = np.zeros(self.args.num_envs)
-        self.random_actions=[]
+        #self.random_actions=[]
 
     def select_action(self, obs, Random_actions):
         wandb.log({'epsilon': self.epsilons[self.global_step]})
         
-        if random.random() < self.epsilons[self.global_step] or self.global_step < self.batch_size:
+        if random.random() < self.epsilons[self.global_step] :
             action_indices = np.random.choice(self.actions_list.shape[0], size=self.args.num_envs, replace=True)
             action = self.actions_list[action_indices]
             
             for i in range(self.args.num_envs):
                 wandb.log({"actions random": action_indices[i]})
                 
-            return action
+            return action 
     
         else:
             
             if self.stoch:
-                if args.env_id=="Breakout-v4" or args.env_id == "Acrobot-v1":
+                if args.env_id=="Breakout-v4" or args.env_id == "Acrobot-v1" or args.env_id == "LunarLander-v2":
                     obs=obs.reshape(obs.shape[0],-1)
                 
                 obs_tensor = torch.tensor(obs, dtype=torch.float32).to(self.device)
                 
                 #sample batch_size elements from replay buffer
                 data= self.replay_buffer.sample(self.batch_size)
-                
                 actions_set = np.concatenate((data.actions, Random_actions), axis=0)
                 actions_set = torch.tensor(actions_set,dtype=torch.float)
             
-                action=max_action(obs_tensor,actions_set,self.q_network)
+                action,indices=max_action(obs_tensor,actions_set,self.q_network)
                 
             else:
                 
-                if args.env_id=="Breakout-v4" or args.env_id == "Acrobot-v1":
+                if args.env_id=="Breakout-v4" or args.env_id == "Acrobot-v1" or args.env_id == "LunarLander-v2":
                     obs=obs.reshape(obs.shape[0],-1)
                     actions_tensor=self.actions_tensor.reshape(self.actions_tensor.shape[0],1)
                 else:
@@ -509,20 +508,22 @@ class DQNAgent:
                     
                 obs_tensor = torch.tensor(obs, dtype=torch.float32).to(self.device)
                 
-                action=max_action(obs_tensor,actions_tensor,self.q_network)
+                action,indices=max_action(obs_tensor,actions_tensor,self.q_network)
                 
            
             for i in range(self.args.num_envs):
-                wandb.log({"actions selected": action[i]})
+                wandb.log({"actions selected": indices[i]})
                 
             return action
             
     def train(self):
+        self.episode_step = 0
         obs, _ = self.env.reset()
+        
         for self.global_step in range(self.args.total_timesteps):
             
             if self.stoch:
-                random_action_indices = np.random.choice(self.actions_list.shape[0], size=self.log2_actions, replace=False)
+                random_action_indices = np.random.choice(self.actions_list.shape[0], size= self.log2_actions, replace=False) 
                 random_actions = self.actions_list[random_action_indices]
                 
             else:
@@ -554,10 +555,14 @@ class DQNAgent:
             if done.any():
                 for i in range(self.args.num_envs): 
                     if done[i]:
+                        self.episode_step +=1
                         wandb.log({"reward_per_episode": self.sum_reward[i] })
                         wandb.log({"episode_length": self.lengths[i]})
-                        self.lengths[i]=0
+                        wandb.log({"number of episodes": self.episode_step})
+                        self.lengths[i] = 0
                         self.sum_reward[i] = 0
+            if self.episode_step >= self.args.episode_numbers:
+                break
       
     
     def update_q_network(self):
@@ -566,75 +571,55 @@ class DQNAgent:
         
         if self.stoch:
             with torch.no_grad():
-                if args.env_id=="Breakout-v4" or args.env_id == "Acrobot-v1":
+                if args.env_id=="Breakout-v4" or args.env_id == "Acrobot-v1" or args.env_id == "LunarLander-v2":
                     if self.double:
-                        target_values = Target_Values(data.next_observations.reshape(data.next_observations.shape[0],-1), data.actions,rewards,self.target_network,self.q_network,self.args.gamma)
+                        target_values = Target_Values(data.next_observations.reshape(data.next_observations.shape[0],-1), data.actions,rewards,data.dones,self.target_network,self.q_network,self.args.gamma)
                     else:
-                        target_values = Target_Values(data.next_observations.reshape(data.next_observations.shape[0],-1), data.actions,rewards,self.target_network,self.target_network,self.args.gamma)
+                        target_values = Target_Values(data.next_observations.reshape(data.next_observations.shape[0],-1), data.actions,rewards,data.dones,self.target_network,self.target_network,self.args.gamma)
 
                 else:
                     if self.double:
-                        target_values = Target_Values(data.next_observations, data.actions,rewards,self.target_network,self.q_network,self.args.gamma)
+                        target_values = Target_Values(data.next_observations, data.actions,rewards,data.dones,self.target_network,self.q_network,self.args.gamma)
                     else:
-                        target_values = Target_Values(data.next_observations, data.actions,rewards,self.target_network,self.target_network,self.args.gamma)
+                        target_values = Target_Values(data.next_observations, data.actions,rewards,data.dones,self.target_network,self.target_network,self.args.gamma)
                      
         else:
             with torch.no_grad():
-                if args.env_id=="Breakout-v4" or args.env_id == "Acrobot-v1":
+                if args.env_id=="Breakout-v4" or args.env_id == "Acrobot-v1" or args.env_id== "LunarLander-v2":
                     if self.double:
-                        target_values = Target_Values(data.next_observations.reshape(data.next_observations.shape[0],-1), self.actions_tensor.reshape(self.actions_tensor.shape[0],1) ,rewards,self.target_network,self.q_network,self.args.gamma)
+                        target_values = Target_Values(data.next_observations.reshape(data.next_observations.shape[0],-1), self.actions_tensor.reshape(self.actions_tensor.shape[0],1) ,rewards,data.dones,self.target_network,self.q_network,self.args.gamma)
                     else:
-                        target_values = Target_Values(data.next_observations.reshape(data.next_observations.shape[0],-1), self.actions_tensor.reshape(self.actions_tensor.shape[0],1) ,rewards,self.target_network,self.target_network,self.args.gamma)
+                        target_values = Target_Values(data.next_observations.reshape(data.next_observations.shape[0],-1), self.actions_tensor.reshape(self.actions_tensor.shape[0],1) ,rewards,data.dones,self.target_network,self.target_network,self.args.gamma)
 
                 else:
                     if self.double: 
-                        target_values = Target_Values(data.next_observations, self.actions_tensor,rewards,self.target_network,self.q_network,self.args.gamma)
+                        target_values = Target_Values(data.next_observations, self.actions_tensor,rewards,data.dones,self.target_network,self.q_network,self.args.gamma)
                     else:
-                        target_values = Target_Values(data.next_observations, self.actions_tensor,rewards,self.target_network,self.target_network,self.args.gamma)
+                        target_values = Target_Values(data.next_observations, self.actions_tensor,rewards,data.dones,self.target_network,self.target_network,self.args.gamma)
         
         old_val = self.q_network(torch.cat((data.observations.float(), data.actions.float()), dim=-1))
         
         for i in range(len(target_values)):
             wandb.log({'predicted values': old_val[i]})
             wandb.log({'target values': target_values[i]})
-        
         loss = F.mse_loss(old_val, target_values) 
         wandb.log({'loss':loss})
-        loss = torch.clamp(loss, min=-1, max=1)
+        
+        clipped_loss = torch.clamp(loss, min=-1, max=1)
+        wandb.log({'clipped loss':clipped_loss})
         
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
         
-        wandb.log({'clipped loss':loss})
-            
     def update_target_network(self):
         #self.target_network.load_state_dict(self.q_network.state_dict())
         
-        tau = 0.01  # Mixing coefficient: 0.0 -> all target, 1.0 -> all q_network
-
-        # Get state dictionaries for both networks
         q_state_dict = self.q_network.state_dict()
         target_state_dict = self.target_network.state_dict()
 
-        # Blend the parameters
         for name in target_state_dict.keys():
             target_state_dict[name] = (
-                tau * q_state_dict[name] + (1 - tau) * target_state_dict[name]
+                self.args.tau * q_state_dict[name] + (1 - self.args.tau) * target_state_dict[name]
                 )
-        # Load the mixed parameters back into the target network
         self.target_network.load_state_dict(target_state_dict)
-
-    def close(self):
-        self.env.close()
-        
-        
-
-    
-    
-    
-    
-    
-    
-    
-    
