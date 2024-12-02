@@ -27,22 +27,24 @@ class Args_:
     """the user or org name of the model repository from the Hugging Face Hub"""
 
     # Algorithm specific arguments
-    env_id: str ="InvertedPendulum-v4"#"Acrobot-v1"#"MountainCarContinuous-v0"#"Breakout-v4"#"HalfCheetah-v4"#"InvertedPendulum-v4"#"FrozenLake-v1"#"CliffWalking-v0"##"CliffWalking-v0"#"HalfCheetah-v4"#"InvertedPendulum-v4"#"FrozenLake-v1"## # "InvertedPendulum-v4" # # # #"FrozenLake-v1" #
+    env_id: str ="InvertedPendulum-v4"#"HalfCheetah-v4"#"Breakout-v4"#"LunarLander-v2" #"HalfCheetah-v4"#"Acrobot-v1"##"InvertedPendulum-v4"##"MountainCarContinuous-v0"##"HalfCheetah-v4"#"InvertedPendulum-v4"#"FrozenLake-v1"#"CliffWalking-v0"##"CliffWalking-v0"#"HalfCheetah-v4"#"InvertedPendulum-v4"#"FrozenLake-v1"## # "InvertedPendulum-v4" # # # #"FrozenLake-v1" #
     """the id of the environment"""
     i: int = None 
-    total_timesteps: int =1_875_000#6_250_000 # 1_875_000 #
+    total_timesteps: int =1_875_000 #6_250_000 # 1_875_000 #
     """total timesteps of the experiments"""
+    episode_numbers: int = 30_000
+    """number of episodes"""
     num_envs: int = 16
     """the number of parallel game environments"""
-    buffer_size: int = 100_000
+    #buffer_size: int = 100_000
     """the replay memory buffer size"""
     learning_rate: float = 0.001
     """the learning rate of the optimizer"""
     gamma: float = 0.95
     """the discount factor gamma"""
-    tau: float = 1.0
+    tau: float = 0.05
     """the target network update rate"""
-    batch_size: int = 64
+    #batch_size: int = 64
     """the batch size of sample from the reply memory"""
     max_epsilon: float = 1
     """the starting epsilon for exploration"""
@@ -50,11 +52,11 @@ class Args_:
     """the ending epsilon for exploration"""
     epsilon_decay_rate: float = 0.995
     """the epsilon decay rate"""
-    learning_starts: int = int(50_000 /num_envs)
+    learning_starts: int = 50
     """timestep to start learning"""
     train_frequency: int = 1
     """the frequency of training"""
-    target_network_frequency: int = int(5_000/num_envs) 
+    target_network_frequency: int = 1 #int(5_000/num_envs) 
     """the timesteps it takes to update the target network"""
     
     # for the stochastic learning
