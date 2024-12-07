@@ -27,14 +27,14 @@ class Args_:
     """the user or org name of the model repository from the Hugging Face Hub"""
 
     # Algorithm specific arguments
-    env_id: str ="InvertedPendulum-v4"#"HalfCheetah-v4"#"Breakout-v4"#"LunarLander-v2" #"HalfCheetah-v4"#"Acrobot-v1"##"InvertedPendulum-v4"##"MountainCarContinuous-v0"##"HalfCheetah-v4"#"InvertedPendulum-v4"#"FrozenLake-v1"#"CliffWalking-v0"##"CliffWalking-v0"#"HalfCheetah-v4"#"InvertedPendulum-v4"#"FrozenLake-v1"## # "InvertedPendulum-v4" # # # #"FrozenLake-v1" #
+    env_id: str ="InvertedPendulum-v4"#"HalfCheetah-v4"#"InvertedPendulum-v4" #"FrozenLake-v1"#"CliffWalking-v0"##"CliffWalking-v0"#"HalfCheetah-v4"#"InvertedPendulum-v4"#"FrozenLake-v1"## # "InvertedPendulum-v4" # # # #"FrozenLake-v1" #
     """the id of the environment"""
     i: int = None 
-    total_timesteps: int =1_875_000 #6_250_000 # 1_875_000 #
+    total_timesteps: int =30_000_000 #6_250_000 # 1_875_000 #
     """total timesteps of the experiments"""
     episode_numbers: int = 30_000
     """number of episodes"""
-    num_envs: int = 16
+    num_envs: int = 1
     """the number of parallel game environments"""
     #buffer_size: int = 100_000
     """the replay memory buffer size"""

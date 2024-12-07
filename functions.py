@@ -157,6 +157,9 @@ def max_action(obs_tensor ,actions_tensor,q_network):
     expanded_obs = expanded_obs.reshape(-1, obs_tensor.shape[1])  # shape: [n * num_actions, obs_dim]
 
     actions_tensor = torch.tensor(actions_tensor)
+    
+    actions_tensor = actions_tensor.to(expanded_obs.device)  # Move actions_tensor to the same device
+
     input_tensor = torch.cat((expanded_obs, actions_tensor.repeat(args.num_envs,1)), dim=-1) #shape: [n*num_actions, obs_dim + action_dim]
     with torch.no_grad():
         q_values = q_network(input_tensor) #shape [n*num_actions,1]
