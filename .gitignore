@@ -17,3 +17,5 @@ Spam.py
 Questions.py
 .bash_logout
 server_test.py
+server*
+*.log

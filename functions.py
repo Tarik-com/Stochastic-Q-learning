@@ -104,10 +104,41 @@ def one_plot(data,window_size,names,y_name,title_,hline=True,all_=False):
 def format_func(value, tick_position):
     return f'{int(value):_}'
 
-def one_plot_1(data:list,names:list,window_size=100,y_name="Rewards",x_name="Steps",title=""):
+def plot_std(data:list, std:list, names:list,window_size=1,y_name="Rewards",x_name="Steps",title="",alpha=0.1,linewidth=0.8):
     plt.figure(figsize=(7,5))
     i=0
     arr = np.array(data)
+    
+    if arr.ndim==1:
+        smoothed_reward=moving_average(data,window_size)
+        smoothed_std=moving_average(std,window_size)
+        x_ax=list(range(len(smoothed_reward)))
+        plt.plot(x_ax, tmsmoothed_rewardp,label=names,linewidth=linewidth)
+        plt.fill_between(x_ax,smoothed_reward-smoothed_std,smoothed_reward+smoothed_std,alpha=alpha)
+    else:
+        for d,std_value in zip(data,std):
+            smoothed_reward=moving_average(d,window_size)
+            smoothed_std=moving_average(std_value,window_size)
+            x_ax=list(range(len(smoothed_reward)))
+            plt.plot(x_ax, smoothed_reward,label=f"{names[i]}",linewidth=linewidth)
+            plt.fill_between(x_ax,smoothed_reward-smoothed_std,smoothed_reward+smoothed_std,alpha=alpha)
+        
+            i+=1
+    #plt.gca().xaxis.set_major_formatter(FuncFormatter(format_func))
+    #plt.gca().yaxis.set_major_formatter(FuncFormatter(format_func))
+    plt.grid(visible=True)
+    plt.ylabel(y_name)
+    plt.xlabel(x_name)
+    plt.title(title)
+    plt.tight_layout()
+    plt.legend()
+    plt.show()
+
+
+def one_plot_1(data:list,names:list,window_size=1,y_name="Rewards",x_name="Steps",title=""):
+    plt.figure(figsize=(7,5))
+    i=0
+    arr = np.array(data,dtype=object)
     if arr.ndim==1:
         tmp=moving_average(data,window_size)
         plt.plot(np.arange(window_size - 1, len(data)), tmp,label=names)
@@ -119,7 +150,7 @@ def one_plot_1(data:list,names:list,window_size=100,y_name="Rewards",x_name="Ste
             i+=1
     plt.gca().xaxis.set_major_formatter(FuncFormatter(format_func))
     #plt.gca().yaxis.set_major_formatter(FuncFormatter(format_func))
-    
+    plt.grid(visible=True)
     plt.ylabel(y_name)
     plt.xlabel(x_name)
     plt.title(title)
@@ -139,11 +170,16 @@ def discretize_action_space(env,i):
         a=np.linspace(low_bound,high_bound,i)
 
         return np.array(list(itertools.product(a,repeat=d)))
-
+def epsilon(step):
+    if step <args.learning_starts:
+        return 1
+    else:
+        return 1* args.epsilon_decay_rate**( step -args.learning_starts)
+        
 def epsilon_fun():
     epsilon_list=[]
     # Calculate epsilon for each step
-    for step in range(args.total_timesteps):
+    for step in range(args.total_timesteps+2000):
         if step < args.learning_starts:
             epsilon = 1
             epsilon_list.append(epsilon)

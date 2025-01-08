@@ -9,7 +9,6 @@ import wandb
 
 from collections import deque
 from stable_baselines3.common.buffers import ReplayBuffer
-#from torch.utils.tensorboard import SummaryWriter
 import Network
 import Args
 importlib.reload(Network)
@@ -438,8 +437,8 @@ class DQNAgent:
         self.target_network = QNetwork(self.env).to(self.device)
         self.target_network.load_state_dict(self.q_network.state_dict())
         
-        self.optimizer = optim.Adam(self.q_network.parameters(), lr=args.learning_rate)
-        self.epsilons = epsilon_fun()
+        self.optimizer = optim.Adam(self.q_network.parameters(), lr=self.args.learning_rate)
+        #self.epsilons = epsilon_fun()
         
         self.log2_actions = round(np.log2(len(self.actions_list))) 
         self.batch_size = 2 * self.log2_actions
@@ -452,10 +451,9 @@ class DQNAgent:
             self.device,
             handle_timeout_termination=False)
         
-        wandb.init(
+        """wandb.init(
         project="Stochastic_QLearning_DQN",
-        mode="offline",
-
+        #mode="offline",
         config={"environment": self.args.env_id,
                 "num_env": self.args.num_envs,
                 "buffer size": self.buffer_size,
@@ -464,108 +462,84 @@ class DQNAgent:
                 "learning starts": self.args.learning_starts,
                 "learning frequency": self.args.train_frequency,
                 "target frequency": self.args.target_network_frequency
-                })
-                
-        self.average_rewards=[]
-        self.lengths=np.zeros(self.args.num_envs)
-        self.sum_reward = np.zeros(self.args.num_envs)
-        #self.random_actions=[]
+                })"""
 
     def select_action(self, obs, Random_actions):
-        wandb.log({'epsilon': self.epsilons[self.global_step]})
+        #wandb.log({'epsilon': epsilon(self.global_step)})
         
-        if random.random() < self.epsilons[self.global_step] :
+        if random.random() < epsilon(self.global_step) :
             action_indices = np.random.choice(self.actions_list.shape[0], size=self.args.num_envs, replace=True)
             action = self.actions_list[action_indices]
-            
-            for i in range(self.args.num_envs):
-                wandb.log({"actions random": action_indices[i]})
-                
-            return action 
+            #for i in range(self.args.num_envs):
+                #wandb.log({"actions random": action_indices[i]}) 
+            return action
     
         else:
-            
             if self.stoch:
-                #if args.env_id=="Breakout-v4" or args.env_id == "Acrobot-v1" or args.env_id == "LunarLander-v2":
-                    #obs=obs.reshape(obs.shape[0],-1)
-                
                 obs_tensor = torch.tensor(obs, dtype=torch.float32).to(self.device)
                 
-                #sample batch_size elements from replay buffer
                 data= self.replay_buffer.sample(self.batch_size)
                 actions_set = np.concatenate((data.actions.cpu().numpy(), Random_actions), axis=0)
+                #actions_set = data.actions.cpu().numpy()
                 actions_set = torch.tensor(actions_set,dtype=torch.float)
             
                 action,indices=max_action(obs_tensor,actions_set,self.q_network)
                 
             else:
-                
-                #if args.env_id=="Breakout-v4" or args.env_id == "Acrobot-v1" or args.env_id == "LunarLander-v2":
-                    #obs=obs.reshape(obs.shape[0],-1)
-                    #actions_tensor=self.actions_tensor.reshape(self.actions_tensor.shape[0],1)
-                #else:
                 actions_tensor=self.actions_tensor
-                    
                 obs_tensor = torch.tensor(obs, dtype=torch.float32).to(self.device)
                 
                 action,indices=max_action(obs_tensor,actions_tensor,self.q_network)
                 
-           
-            for i in range(self.args.num_envs):
-                wandb.log({"actions selected": indices[i]})
-                
+            #for i in range(self.args.num_envs):
+                #wandb.log({"actions selected": indices[i]})    
             return action
             
     def train(self):
-        self.episode_step = 0
+        self.average_rewards=[0]
+        return_step=[]
+        total_reward=0
+        episode_steps=0
         obs, _ = self.env.reset()
-        
-        for self.global_step in range(self.args.total_timesteps):
-            
+        for step_ in range(args.total_timesteps):
+            self.global_step=step_
+            episode_steps+=1
             if self.stoch:
+                #random_actions = None
                 random_action_indices = np.random.choice(self.actions_list.shape[0], size= self.log2_actions, replace=False) 
-                random_actions = self.actions_list[random_action_indices]
-                
+                random_actions = self.actions_list[random_action_indices] 
             else:
                 random_actions = None
                 
             action = self.select_action(obs,random_actions)
             next_obs, reward, terminated, truncated, _ = self.env.step(action)
-            done = np.logical_or(terminated,truncated)
+            done = terminated or truncated
             
             for i in range(self.args.num_envs):
                 self.replay_buffer.add(obs[i], next_obs[i], action[i], reward[i], done[i],_)
-                wandb.log({"actions": action[i]})
-                wandb.log({"instant reward": reward[i]})
+                total_reward+=reward[i]
                 
+            if episode_steps>= self.args.max_step:
+                done=True
+                #wandb.log({"actions": action[i]})
             obs = next_obs
             
             # LEARNING
             if self.global_step > self.args.learning_starts:
                 if self.global_step % self.args.train_frequency == 0:
                     self.update_q_network()
-
-                # Update target network
+                    
                 if self.global_step % self.args.target_network_frequency == 0:
                     self.update_target_network()
-                    
-            self.sum_reward = self.sum_reward + reward
-            self.lengths = self.lengths + np.ones(self.args.num_envs)
-            
-            if done.any():
-                for i in range(self.args.num_envs): 
-                    if done[i]:
-                        self.episode_step +=1
-                        wandb.log({"reward_per_episode": self.sum_reward[i] })
-                        wandb.log({"episode_length": self.lengths[i]})
-                        wandb.log({"number of episodes": self.episode_step})
-                        self.average_rewards.append(self.sum_reward[i])
-                        self.lengths[i] = 0
-                        self.sum_reward[i] = 0
-            if self.episode_step >= self.args.episode_numbers:
-                return self.average_rewards
-                break
-        return self.average_rewards
+            return_step.append(self.average_rewards[-1])
+            if done:
+                self.average_rewards.append(total_reward)
+                total_reward=0
+                episode_steps=0
+                obs,_ = self.env.reset()
+                
+        return return_step
+
     def test_max_action(self,loop):
         obs,_=self.env.reset()
         if self.stoch:
@@ -612,14 +586,14 @@ class DQNAgent:
         
         old_val = self.q_network(torch.cat((data.observations.float(), data.actions.float()), dim=-1))
         
-        for i in range(len(target_values)):
-            wandb.log({'predicted values': old_val[i]})
-            wandb.log({'target values': target_values[i]})
+        #for i in range(len(target_values)):
+            #wandb.log({'predicted values': old_val[i]})
+            #wandb.log({'target values': target_values[i]})
         loss = F.mse_loss(old_val, target_values) 
-        wandb.log({'loss':loss})
+        #wandb.log({'loss':loss})
         
         clipped_loss = torch.clamp(loss, min=-1, max=1)
-        wandb.log({'clipped loss':clipped_loss})
+        #wandb.log({'clipped loss':clipped_loss})
         
         self.optimizer.zero_grad()
         loss.backward()

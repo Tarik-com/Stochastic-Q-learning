@@ -3,60 +3,44 @@ from dataclasses import dataclass
 
 @dataclass
 class Args_:
-    exp_name: str = os.path.basename(__file__)[: -len(".py")]
-    """the name of this experiment"""
+
     seed: int = 1
     """seed of the experiment"""
-    torch_deterministic: bool = True
-    """if toggled, `torch.backends.cudnn.deterministic=False`"""
     cuda: bool = True
     """if toggled, cuda will be enabled by default"""
     track: bool = False
     """if toggled, this experiment will be tracked with Weights and Biases"""
-    wandb_project_name: str = "cleanRL"
-    """the wandb's project name"""
-    wandb_entity: str = None
-    """the entity (team) of wandb's project"""
-    capture_video: bool = False
-    """whether to capture videos of the agent performances (check out `videos` folder)"""
-    save_model: bool = False
-    """whether to save model into the `runs/{run_name}` folder"""
-    upload_model: bool = False
-    """whether to upload the saved model to huggingface"""
-    hf_entity: str = ""
-    """the user or org name of the model repository from the Hugging Face Hub"""
 
     # Algorithm specific arguments
-    env_id: str ="InvertedPendulum-v4"#"HalfCheetah-v4"#"InvertedPendulum-v4" #"FrozenLake-v1"#"CliffWalking-v0"##"CliffWalking-v0"#"HalfCheetah-v4"#"InvertedPendulum-v4"#"FrozenLake-v1"## # "InvertedPendulum-v4" # # # #"FrozenLake-v1" #
+    env_id: str ="InvertedPendulum-v4"#"HalfCheetah-v4"#"InvertedPendulum-v4"# #"FrozenLake-v1"#"CliffWalking-v0"
     """the id of the environment"""
     i: int = None 
-    total_timesteps: int =30_000_000 #6_250_000 # 1_875_000 #
+    total_timesteps: int =30_000 #6_250_000 # 1_875_000 #
     """total timesteps of the experiments"""
-    episode_numbers: int = 30_000
-    """number of episodes"""
+    max_step=100
+    """steps lkimit per episode"""
     num_envs: int = 1
     """the number of parallel game environments"""
-    #buffer_size: int = 100_000
-    """the replay memory buffer size"""
+
     learning_rate: float = 0.001
     """the learning rate of the optimizer"""
     gamma: float = 0.95
     """the discount factor gamma"""
-    tau: float = 0.05
+    tau: float = 0.75
     """the target network update rate"""
-    #batch_size: int = 64
-    """the batch size of sample from the reply memory"""
+
     max_epsilon: float = 1
     """the starting epsilon for exploration"""
     min_epsilon: float = 0.01
     """the ending epsilon for exploration"""
     epsilon_decay_rate: float = 0.995
     """the epsilon decay rate"""
+    
     learning_starts: int = 50
     """timestep to start learning"""
     train_frequency: int = 1
     """the frequency of training"""
-    target_network_frequency: int = 1 #int(5_000/num_envs) 
+    target_network_frequency: int = 1 
     """the timesteps it takes to update the target network"""
     
     # for the stochastic learning
