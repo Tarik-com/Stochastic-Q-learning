@@ -55,7 +55,8 @@ class QLearningAgent:
         
         # set-up
         if args.env_id=="FrozenLake-v1":
-            self.q_table=np.full((self.env.observation_space.n, self.env.action_space.n),0.9)
+            #self.q_table=np.full((self.env.observation_space.n, self.env.action_space.n),self.args.Qtable_init)
+            self.q_table=np.random.rand(self.env.observation_space.n, self.env.action_space.n)
         else:
             self.q_table = np.zeros((self.env.observation_space.n, self.env.action_space.n))
         
@@ -109,7 +110,8 @@ class Stoch_QLearningAgent:
         
         # set-up
         if args.env_id=="FrozenLake-v1":
-            self.q_table=np.full((self.env.observation_space.n, self.env.action_space.n),0.9)
+            #self.q_table=np.full((self.env.observation_space.n, self.env.action_space.n),self.args.Qtable_init)
+            self.q_table=np.random.rand(self.env.observation_space.n, self.env.action_space.n)
         else:
             self.q_table = np.zeros((self.env.observation_space.n, self.env.action_space.n))
         
@@ -171,8 +173,10 @@ class DoubleQLearningAgent:
         self.gamma=0.95
         self.env = gym.make(args.env_id)
         if args.env_id=="FrozenLake-v1":
-            self.q_table1=np.full((self.env.observation_space.n, self.env.action_space.n),0.9)
-            self.q_table2=np.full((self.env.observation_space.n, self.env.action_space.n),0.9)
+            #self.q_table1=np.full((self.env.observation_space.n, self.env.action_space.n),self.args.Qtable_init)
+            #self.q_table2=np.full((self.env.observation_space.n, self.env.action_space.n),self.args.Qtable_init)
+            self.q_table1=np.random.rand(self.env.observation_space.n, self.env.action_space.n)
+            self.q_table2=np.random.rand(self.env.observation_space.n, self.env.action_space.n)
         else:
             self.q_table1 = np.zeros((self.env.observation_space.n, self.env.action_space.n))
             self.q_table2 = np.zeros((self.env.observation_space.n, self.env.action_space.n))
@@ -235,8 +239,10 @@ class Stoch_DoubleQLearningAgent:
         
         # set-up
         if args.env_id=="FrozenLake-v1":
-            self.q_table1=np.full((self.env.observation_space.n, self.env.action_space.n),0.9)
-            self.q_table2=np.full((self.env.observation_space.n, self.env.action_space.n),0.9)
+            #self.q_table1=np.full((self.env.observation_space.n, self.env.action_space.n),self.args.Qtable_init)
+            #self.q_table2=np.full((self.env.observation_space.n, self.env.action_space.n),self.args.Qtable_init)
+            self.q_table1=np.random.rand(self.env.observation_space.n, self.env.action_space.n)
+            self.q_table2=np.random.rand(self.env.observation_space.n, self.env.action_space.n)
         else:
             self.q_table1 = np.zeros((self.env.observation_space.n, self.env.action_space.n))
             self.q_table2 = np.zeros((self.env.observation_space.n, self.env.action_space.n))
@@ -308,7 +314,8 @@ class SARSAAgent:
         self.env = gym.make(args.env_id)
         
         if args.env_id=="FrozenLake-v1":
-            self.q_table=np.full((self.env.observation_space.n, self.env.action_space.n),0.9)
+            #self.q_table=np.full((self.env.observation_space.n, self.env.action_space.n),self.args.Qtable_init)
+            self.q_table=np.random.rand(self.env.observation_space.n, self.env.action_space.n)
         else:
             self.q_table = np.zeros((self.env.observation_space.n, self.env.action_space.n))
         self.D={}
@@ -364,7 +371,8 @@ class Stoch_SARSAAgent:
         
         # set-up
         if args.env_id=="FrozenLake-v1":
-            self.q_table=np.full((self.env.observation_space.n, self.env.action_space.n),0.9)
+            #self.q_table=np.full((self.env.observation_space.n, self.env.action_space.n),self.args.Qtable_init)
+            self.q_table=np.random.rand(self.env.observation_space.n, self.env.action_space.n)
         else:
             self.q_table = np.zeros((self.env.observation_space.n, self.env.action_space.n))
         self.states_history={}

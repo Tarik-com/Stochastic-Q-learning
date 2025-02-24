@@ -12,10 +12,10 @@ class Args_:
     """if toggled, this experiment will be tracked with Weights and Biases"""
 
     # Algorithm specific arguments
-    env_id: str ="InvertedPendulum-v4"#"HalfCheetah-v4"#"InvertedPendulum-v4"# #"FrozenLake-v1"#"CliffWalking-v0"
+    env_id: str ="FrozenLake-v1"#"InvertedPendulum-v4"#"HalfCheetah-v4"#"InvertedPendulum-v4"# ##"CliffWalking-v0"
     """the id of the environment"""
     i: int = None 
-    total_timesteps: int =30_000 #6_250_000 # 1_875_000 #
+    total_timesteps: int =500_000 #6_250_000 # 1_875_000 #
     """total timesteps of the experiments"""
     max_step=100
     """steps lkimit per episode"""
@@ -44,8 +44,8 @@ class Args_:
     """the timesteps it takes to update the target network"""
     
     # for the stochastic learning
-    
-    C:int=2
+    Qtable_init=0.5
+    C:int=3
     """total size of the action subset"""
     
     memory_size: int =2

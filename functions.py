@@ -104,7 +104,7 @@ def one_plot(data,window_size,names,y_name,title_,hline=True,all_=False):
 def format_func(value, tick_position):
     return f'{int(value):_}'
 
-def plot_std(data:list, std:list, names:list,window_size=1,y_name="Rewards",x_name="Steps",title="",alpha=0.1,linewidth=0.8):
+def plot_std(data:list, std:list, names:list,window_size=1,y_name="Rewards",x_name="Steps",title="",alpha=0.1,linewidth=0.8,inf_lim=None,sup_lim=None):
     plt.figure(figsize=(7,5))
     i=0
     arr = np.array(data)
@@ -129,13 +129,15 @@ def plot_std(data:list, std:list, names:list,window_size=1,y_name="Rewards",x_na
     plt.grid(visible=True)
     plt.ylabel(y_name)
     plt.xlabel(x_name)
+    if inf_lim != None or sup_lim != None:
+        plt.ylim(inf_lim,sup_lim)
     plt.title(title)
     plt.tight_layout()
-    plt.legend()
+    plt.legend()#loc='center left',bbox_to_anchor=(1, 0.5))
     plt.show()
 
 
-def one_plot_1(data:list,names:list,window_size=1,y_name="Rewards",x_name="Steps",title=""):
+def one_plot_1(data:list,names:list,window_size=1,y_name="Rewards",x_name="Steps",title="",inf_lim=None,sup_lim=None):
     plt.figure(figsize=(7,5))
     i=0
     arr = np.array(data,dtype=object)
@@ -155,6 +157,8 @@ def one_plot_1(data:list,names:list,window_size=1,y_name="Rewards",x_name="Steps
     plt.xlabel(x_name)
     plt.title(title)
     plt.tight_layout()
+    if inf_lim != None or sup_lim != None:
+        plt.ylim(inf_lim,sup_lim)
     plt.legend()
     plt.show()
 
